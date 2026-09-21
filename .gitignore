@@ -1,0 +1,10 @@
+node_modules
+dist
+docs
+tmp
+*.log
+.*
+!.github
+!.vscode
+!.gitignore
+*.tsbuildinfo

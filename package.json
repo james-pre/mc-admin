@@ -1,0 +1,61 @@
+{
+	"name": "@james-pre/mc-admin",
+	"version": "0.1.0",
+	"description": "Minecraft server administration CLI.",
+	"homepage": "https://github.com/james-pre/mc-admin#readme",
+	"bugs": {
+		"url": "https://github.com/james-pre/mc-admin/issues"
+	},
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/james-pre/mc-admin.git"
+	},
+	"funding": {
+		"type": "individual",
+		"url": "https://github.com/sponsors/james-pre"
+	},
+	"license": "GPL-3.0-or-later",
+	"author": "James Prevett <jp@jamespre.dev> (https://jamespre.dev)",
+	"type": "module",
+	"bin": {
+		"mc-admin": "./dist/main.js"
+	},
+	"files": [
+		"dist",
+		"LICENSE.md"
+	],
+	"engines": {
+		"node": ">=22.0.0"
+	},
+	"scripts": {
+		"format:check": "prettier --check .",
+		"format": "prettier --write .",
+		"build": "tsc",
+		"lint": "tsc --noEmit && eslint src",
+		"prepublishOnly": "npx tsc"
+	},
+	"dependencies": {
+		"commander": "^15.0.0",
+		"ioium": "^1.9.0"
+	},
+	"devDependencies": {
+		"@commander-js/extra-typings": "^15.0.0",
+		"@eslint/js": "^10.0.1",
+		"@types/node": "^26.6.2",
+		"eslint": "^10.11.0",
+		"globals": "^17.12.0",
+		"prettier": "^3.9.8",
+		"typescript": "^6.0.0",
+		"typescript-eslint": "^8.70.0",
+		"utilium": "^3.7.1"
+	},
+	"prettier": {
+		"singleQuote": true,
+		"useTabs": true,
+		"trailingComma": "es5",
+		"tabWidth": 4,
+		"printWidth": 140,
+		"arrowParens": "avoid",
+		"experimentalOperatorPosition": "start"
+	}
+}
