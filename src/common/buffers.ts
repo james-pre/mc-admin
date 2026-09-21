@@ -31,3 +31,24 @@ export async function decompress(data: BufferSource, format: CompressionFormat):
 	}
 	return result;
 }
+
+/** Split text into lines, holding a partial line until the rest of it arrives. */
+export function lines(): TransformStream<string, string> {
+	let partial = '';
+	return new TransformStream({
+		transform(chunk, controller) {
+			partial += chunk;
+			const parts = partial.split(/\r?\n/);
+			partial = parts.pop()!;
+			for (const part of parts) controller.enqueue(part);
+		},
+		flush(controller) {
+			if (partial) controller.enqueue(partial);
+		},
+	});
+}
+
+/** Split a byte stream into lines of text. */
+export function toLines(source: ReadableStream<BufferSource>): ReadableStream<string> {
+	return source.pipeThrough(new TextDecoderStream()).pipeThrough(lines());
+}
