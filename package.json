@@ -18,7 +18,14 @@
 	"author": "James Prevett <jp@jamespre.dev> (https://jamespre.dev)",
 	"type": "module",
 	"bin": {
-		"mc-admin": "./dist/main.js"
+		"mc-admin": "./dist/node/main.js"
+	},
+	"main": "./dist/index.js",
+	"types": "./dist/index.d.ts",
+	"exports": {
+		".": "./dist/index.js",
+		"./node": "./dist/node/index.js",
+		"./*": "./dist/*.js"
 	},
 	"files": [
 		"dist",
@@ -30,13 +37,14 @@
 	"scripts": {
 		"format:check": "prettier --check .",
 		"format": "prettier --write .",
-		"build": "tsc",
-		"lint": "tsc --noEmit && eslint src",
-		"prepublishOnly": "npx tsc"
+		"build": "tsc -b",
+		"lint": "tsc -b --noEmit && eslint src",
+		"prepublishOnly": "npx tsc -b"
 	},
 	"dependencies": {
 		"commander": "^15.0.0",
-		"ioium": "^1.9.0"
+		"ioium": "^1.9.0",
+		"utilium": "^3.7.1"
 	},
 	"devDependencies": {
 		"@commander-js/extra-typings": "^15.0.0",
@@ -46,8 +54,7 @@
 		"globals": "^17.12.0",
 		"prettier": "^3.9.8",
 		"typescript": "^6.0.0",
-		"typescript-eslint": "^8.70.0",
-		"utilium": "^3.7.1"
+		"typescript-eslint": "^8.70.0"
 	},
 	"prettier": {
 		"singleQuote": true,
