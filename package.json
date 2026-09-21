@@ -38,7 +38,7 @@
 		"format:check": "prettier --check .",
 		"format": "prettier --write .",
 		"build": "tsc -b",
-		"lint": "tsc -b --noEmit && eslint src",
+		"lint": "eslint src",
 		"prepublishOnly": "npx tsc -b"
 	},
 	"dependencies": {
