@@ -15,7 +15,7 @@ export const vanillaDimensions = {
 const vanillaIds = new Map<string, string>(
 	Object.entries(vanillaDimensions)
 		.filter(([, dir]) => dir)
-		.map(([id, dir]) => [dir, id])
+		.map(([id, dir]) => [dir, id]),
 );
 
 /** The subdirectories a dimension splits its region files across, all on the same grid. */
@@ -36,7 +36,7 @@ export interface RegionFile {
 async function exists(path: string): Promise<boolean> {
 	return await access(path).then(
 		() => true,
-		() => false
+		() => false,
 	);
 }
 
@@ -75,7 +75,7 @@ export class Dimension {
 		public readonly path: string,
 		public readonly id: string,
 		/** The level root this dimension belongs to. */
-		public readonly level: string
+		public readonly level: string,
 	) {}
 
 	/** Where a region's file belongs, whether or not it exists. */
@@ -193,7 +193,7 @@ export class Level {
 		for (const namespace of await subdirectories(root))
 			for (const name of await subdirectories(join(root, namespace)))
 				dimensions.push(
-					...(await Array.fromAsync(Dimension.search(join(root, namespace, name), `${namespace}:${name}`, this.path)))
+					...(await Array.fromAsync(Dimension.search(join(root, namespace, name), `${namespace}:${name}`, this.path))),
 				);
 
 		return dimensions;
