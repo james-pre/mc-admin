@@ -14,7 +14,7 @@ export const colors: Record<'name' | 'string' | 'number' | 'suffix', InspectColo
 const escaped = new Map(
 	Object.entries(escapes)
 		.filter(([letter]) => letter != 's')
-		.map(([letter, char]) => [char, letter] as const)
+		.map(([letter, char]) => [char, letter] as const),
 );
 
 /**
