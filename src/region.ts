@@ -66,7 +66,7 @@ export async function payload(chunk: RawChunk): Promise<Uint8Array<ArrayBuffer>>
 	const format = formats[chunk.compression];
 	if (!format)
 		throw new Error(
-			`chunk ${chunk.x},${chunk.z} uses unsupported compression (${Compression[chunk.compression] ?? chunk.compression})`
+			`chunk ${chunk.x},${chunk.z} uses unsupported compression (${Compression[chunk.compression] ?? chunk.compression})`,
 		);
 	return await decompress(chunk.data, format);
 }

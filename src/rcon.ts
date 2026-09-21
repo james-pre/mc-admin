@@ -70,7 +70,7 @@ export class Connection {
 	 */
 	public constructor(
 		stream: ReadableWritablePair<Uint8Array, Uint8Array>,
-		protected readonly options: ConnectionOptions = {}
+		protected readonly options: ConnectionOptions = {},
 	) {
 		this.writer = stream.writable.getWriter();
 		this.closed = this.read(stream.readable);

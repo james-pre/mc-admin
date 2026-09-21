@@ -16,7 +16,7 @@ export class SnbtError extends SyntaxError {
 	public constructor(
 		message: string,
 		/** Index into the source where parsing gave up. */
-		public readonly position: number
+		public readonly position: number,
 	) {
 		super(`${message} (at ${position})`);
 		this.name = 'SnbtError';
@@ -69,7 +69,7 @@ export class Parser {
 
 	public constructor(
 		protected readonly source: string,
-		options: ParseOptions = {}
+		options: ParseOptions = {},
 	) {
 		this.bareStrings = options.bareStrings ?? false;
 	}
