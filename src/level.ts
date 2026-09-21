@@ -1,9 +1,9 @@
 import { access, readdir, readFile } from 'node:fs/promises';
 import { basename, join, resolve, sep } from 'node:path';
-import type { Named } from '../nbt.js';
-import { parseCompressed } from '../nbt.js';
-import type { Chunk } from '../region.js';
-import { parseName, Region, regionSize } from '../region.js';
+import type { Named } from './common/nbt.js';
+import { parseCompressed } from './common/nbt.js';
+import type { Chunk } from './common/region.js';
+import { parseName, Region, regionSize } from './common/region.js';
 
 /** The directory each vanilla dimension uses, relative to the level root. */
 export const vanillaDimensions = {

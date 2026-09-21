@@ -1,16 +1,10 @@
 {
+	"extends": "./common/tsconfig.json",
 	"compilerOptions": {
-		"module": "NodeNext",
-		"target": "ESNext",
-		"moduleResolution": "NodeNext",
-		"lib": ["ESNext", "DOM"],
-		"types": [],
+		"types": ["node"],
 		"rootDir": ".",
-		"outDir": "../dist",
-		"composite": true,
-		"declaration": true,
-		"isolatedModules": true,
-		"strict": true
+		"outDir": "../dist"
 	},
+	"references": [{ "path": "./common" }],
 	"include": ["*.ts"]
 }

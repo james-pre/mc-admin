@@ -18,13 +18,13 @@
 	"author": "James Prevett <jp@jamespre.dev> (https://jamespre.dev)",
 	"type": "module",
 	"bin": {
-		"mc-admin": "./dist/node/main.js"
+		"mc-admin": "./dist/main.js"
 	},
 	"main": "./dist/index.js",
 	"types": "./dist/index.d.ts",
 	"exports": {
 		".": "./dist/index.js",
-		"./node": "./dist/node/index.js",
+		"./common": "./dist/common/index.js",
 		"./*": "./dist/*.js"
 	},
 	"files": [
@@ -43,7 +43,7 @@
 	},
 	"dependencies": {
 		"commander": "^15.0.0",
-		"ioium": "^1.9.0",
+		"ioium": "^1.10.0",
 		"utilium": "^3.7.1"
 	},
 	"devDependencies": {

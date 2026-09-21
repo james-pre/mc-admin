@@ -1,0 +1,16 @@
+{
+	"compilerOptions": {
+		"module": "NodeNext",
+		"target": "ESNext",
+		"moduleResolution": "NodeNext",
+		"lib": ["ESNext", "DOM"],
+		"types": [],
+		"rootDir": ".",
+		"outDir": "../../dist/common",
+		"composite": true,
+		"declaration": true,
+		"isolatedModules": true,
+		"strict": true
+	},
+	"include": ["*.ts"]
+}
