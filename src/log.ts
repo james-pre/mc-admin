@@ -2,6 +2,8 @@ import { existsSync, watch, type FSWatcher } from 'node:fs';
 import { open, stat, type FileHandle } from 'node:fs/promises';
 import { basename, dirname } from 'node:path';
 import { toLines } from './common/buffers.js';
+import { parse, type LogLevel, type LogLine } from './common/log.js';
+import { styleText, type InspectColor } from 'node:util';
 
 export * from './common/log.js';
 
@@ -130,4 +132,38 @@ export function follow(path: string, options: FollowOptions = {}): ReadableStrea
 /** Follow a file, emitting each line appended to it. */
 export function tail(path: string, options?: FollowOptions): ReadableStream<string> {
 	return toLines(follow(path, options));
+}
+
+export const levelColors: Record<LogLevel, InspectColor> = {
+	TRACE: 'gray',
+	DEBUG: 'magenta',
+	INFO: 'cyan',
+	WARN: 'yellowBright',
+	ERROR: 'red',
+	FATAL: 'redBright',
+};
+
+// Command feedback broadcast, `[Rcon: ...]`.
+const feedbackPattern = /^\[\w+:\s.*\]$/;
+
+// Chat, e.g. `<Notch> hi`. The trailing `>` and space keep this from matching `<--[HERE]`.
+const chatPattern = /^(<\w+>)(\s.*)$/;
+
+function formatMessage(message: string) {
+	if (feedbackPattern.test(message)) return styleText(['italic', 'dim'], message);
+
+	const chat = chatPattern.exec(message);
+	if (chat) return styleText('bold', chat[1]) + chat[2];
+
+	return message;
+}
+
+export function format(line: string | LogLine): string {
+	const parsed = typeof line == 'object' && line !== null ? line : parse(line);
+	// eslint-disable-next-line @typescript-eslint/no-base-to-string
+	if (!parsed) return String(line);
+
+	const { timestamp, thread, level, message } = parsed;
+
+	return [styleText('gray', `[${timestamp}]`), styleText(levelColors[level], `[${thread}/${level}]:`), formatMessage(message)].join(' ');
 }

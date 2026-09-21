@@ -3,18 +3,18 @@ import { styleText, type InspectColor } from 'node:util';
 import { TagType, type Tag, type TagOf } from './common/nbt.js';
 import { arrayMarkers, tagSuffixes, escapes } from './common/snbt.js';
 
-export const colors = {
+export const colors: Record<'name' | 'string' | 'number' | 'suffix', InspectColor> = {
 	name: 'cyan',
 	string: 'green',
 	number: 'yellow',
 	suffix: 'red',
-} satisfies Record<string, InspectColor>;
+};
 
 /** `escapes` read backwards: the letter to write for each character that needs one. */
 const escaped = new Map(
 	Object.entries(escapes)
 		.filter(([letter]) => letter != 's')
-		.map(([letter, char]) => [char, letter] as const),
+		.map(([letter, char]) => [char, letter] as const)
 );
 
 /**
