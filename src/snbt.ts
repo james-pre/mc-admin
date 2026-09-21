@@ -38,12 +38,28 @@ const hex = /^[0-9a-fA-F]{4}$/;
 export const escapes: Record<string, string> = { b: '\b', f: '\f', n: '\n', r: '\r', s: ' ', t: '\t' };
 
 /** @internal */
-export const suffixes: Record<string, TagType> = {
+export const suffixTags: Record<string, TagType> = {
 	b: TagType.Byte,
 	s: TagType.Short,
 	l: TagType.Long,
 	f: TagType.Float,
 	d: TagType.Double,
+};
+
+/** The letter printed after a number of each type. Ints get nothing. */
+export const tagSuffixes = {
+	[TagType.Byte]: 'b',
+	[TagType.Short]: 's',
+	[TagType.Long]: 'L',
+	[TagType.Float]: 'f',
+	[TagType.Double]: 'd',
+};
+
+/** The marker a typed array leads with, and the suffix its items carry. */
+export const arrayMarkers = {
+	[TagType.ByteArray]: ['B', 'b'],
+	[TagType.IntArray]: ['I', ''],
+	[TagType.LongArray]: ['L', 'L'],
 };
 
 /** @internal */
@@ -156,7 +172,7 @@ export class Parser {
 
 	/** An unsuffixed number is an int, or a double once it has a fraction or an exponent. */
 	protected numeric(digits: string, suffix: string, position: number): Tag {
-		const type = suffix ? suffixes[suffix.toLowerCase()] : /[.eE]/.test(digits) ? TagType.Double : TagType.Int;
+		const type = suffix ? suffixTags[suffix.toLowerCase()] : /[.eE]/.test(digits) ? TagType.Double : TagType.Int;
 
 		switch (type) {
 			case TagType.Byte:
