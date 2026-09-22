@@ -5,7 +5,6 @@ export function toBytes(data: BufferSource): Uint8Array<ArrayBuffer> {
 
 export type CompressionFormat = 'gzip' | 'deflate' | 'deflate-raw';
 
-/** Inflate a payload with `DecompressionStream`, the one decompressor every host agrees on. */
 export async function decompress(data: BufferSource, format: CompressionFormat): Promise<Uint8Array<ArrayBuffer>> {
 	const input = new ReadableStream<BufferSource>({
 		start(controller) {

@@ -155,8 +155,3 @@ export class Level {
 		return (await this.dimensions()).find(dimension => normalizeId(dimension.id) === wanted);
 	}
 }
-
-/** The dimensions of a level directory, or the single dimension a dimension directory holds. */
-export async function dimensionsOf(path: string): Promise<Dimension[]> {
-	return (await isLevel(path)) ? await new Level(path).dimensions() : [Dimension.at(path)];
-}
