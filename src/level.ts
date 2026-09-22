@@ -1,11 +1,11 @@
 import * as fs from 'node:fs/promises';
 import { basename, join, resolve, sep } from 'node:path';
-import type { Parsed as Chunk } from './common/chunk.js';
+import type { Parsed as Chunk } from './chunk.js';
 import type { RegionFile, RegionKind } from './common/level.js';
 import { normalizeId, regionKinds, vanillaDimensions, vanillaIds } from './common/level.js';
-import type { Named } from './common/nbt.js';
-import { parseCompressed } from './common/nbt.js';
-import { parseName, Region, regionSize } from './common/region.js';
+import type { Named } from './nbt.js';
+import { parseCompressed } from './nbt.js';
+import { parseName, Region, regionSize } from './region.js';
 export * from './common/level.js';
 import { exists, subdirectories } from './utils.js';
 

@@ -5,15 +5,19 @@ export function toBytes(data: BufferSource): Uint8Array<ArrayBuffer> {
 
 export type CompressionFormat = 'gzip' | 'deflate' | 'deflate-raw';
 
-export async function decompress(data: BufferSource, format: CompressionFormat): Promise<Uint8Array<ArrayBuffer>> {
-	const input = new ReadableStream<BufferSource>({
-		start(controller) {
-			controller.enqueue(toBytes(data));
-			controller.close();
-		},
-	});
+export type Decompressor = (data: BufferSource, format: CompressionFormat) => Promise<Uint8Array<ArrayBuffer>>;
 
-	const reader = input.pipeThrough(new DecompressionStream(format)).getReader();
+/** Decompress using the streams every host has. */
+export const decompressStream: Decompressor = async function (data, format) {
+	const stream = new DecompressionStream(format);
+
+	const writer = stream.writable.getWriter();
+	void writer
+		.write(toBytes(data))
+		.then(() => writer.close())
+		.catch(() => {});
+
+	const reader = stream.readable.getReader();
 
 	const parts: Uint8Array[] = [];
 	let length = 0;
@@ -29,6 +33,13 @@ export async function decompress(data: BufferSource, format: CompressionFormat):
 		offset += part.byteLength;
 	}
 	return result;
+};
+
+export let decompress: Decompressor = decompressStream;
+
+/** Decompress with `decompressor` from now on, such as a host-native one that beats the streams. */
+export function useDecompress(decompressor: Decompressor): void {
+	decompress = decompressor;
 }
 
 /** Split text into lines, holding a partial line until the rest of it arrives. */

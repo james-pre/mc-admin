@@ -1,7 +1,7 @@
 import * as fs from 'node:fs';
 import { dirname, isAbsolute, join, relative } from 'node:path';
 import type { WithRequired } from 'utilium';
-import { TagType } from './common/nbt.js';
+import { TagType } from './nbt.js';
 import { Dimension, isLevel, Level, normalizeId, type RegionFile } from './level.js';
 import { Region as RegionData } from './region.js';
 import { concurrent, exists, filesIdentical, moveFile } from './utils.js';

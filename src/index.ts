@@ -1,4 +1,4 @@
-export * as chunk from './common/chunk.js';
+export * as chunk from './chunk.js';
 export { Dimension, Level } from './level.js';
 export * as level from './level.js';
 export * as log from './log.js';
