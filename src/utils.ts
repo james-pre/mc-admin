@@ -3,14 +3,14 @@ import * as fs from 'node:fs/promises';
 import { dirname } from 'node:path';
 
 /** Run `task` over `items`, keeping at most `limit` of them in flight. */
-export async function concurrent<T, U>(items: readonly T[], limit: number, task: (item: T) => Promise<U>): Promise<U[]> {
+export async function concurrent<T, U>(items: readonly T[], limit: number, task: (item: T, index: number) => Promise<U>): Promise<U[]> {
 	const results: U[] = new Array(items.length);
 	let next = 0;
 
 	async function run() {
 		while (next < items.length) {
 			const index = next++;
-			results[index] = await task(items[index]);
+			results[index] = await task(items[index], index);
 		}
 	}
 
