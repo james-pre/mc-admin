@@ -67,6 +67,8 @@ export interface PrepareOptions extends ExecuteOptions {
 	 * @default 'throw'
 	 */
 	conflicting?: ConflictMode;
+	/** If set, completely ignore empty region files. This is helpful when mods like distant horizons touch empty files */
+	ignoreEmpty?: boolean;
 }
 
 export interface Result {
@@ -130,6 +132,8 @@ export class Transaction extends EventEmitter<{
 
 			await concurrent(await dimension.regionFiles(), options.concurrency ?? 4, async file => {
 				try {
+					if (options.ignoreEmpty && !(await fs.promises.stat(file.path)).size) return;
+
 					const region = new RegionData(await fs.promises.readFile(file.path), file) as WithRequired<RegionData, 'file'>;
 
 					const stored = Array.from(region.entries()).length;

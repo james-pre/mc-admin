@@ -65,6 +65,7 @@ cli_regions
 				: _throw(new InvalidArgumentError('Invalid conflict mode')),
 		'throw',
 	)
+	.option('-i, --ignore-empty', 'ignore empty region files')
 	.action(async function (options) {
 		if (options.verbose) io._setDebugOutput(true);
 
@@ -95,7 +96,12 @@ cli_regions
 				process.exitCode = 1;
 			});
 
-		const pruneOpts = { threshold, exclude: config.protected_regions, into, ...pick(options, 'atomic', 'conflicting', 'delete') };
+		const pruneOpts = {
+			threshold,
+			exclude: config.protected_regions,
+			into,
+			...pick(options, 'atomic', 'conflicting', 'delete', 'ignoreEmpty'),
+		};
 
 		await tx.prepare(pruneOpts);
 
