@@ -66,6 +66,8 @@ cli_regions
 		'throw',
 	)
 	.action(async function (options) {
+		if (options.verbose) io._setDebugOutput(true);
+
 		const threshold = BigInt(Math.round(options.threshold ?? config.prune_threshold) * 20); // seconds -> ticks
 
 		const world = resolve(config.world_path);
@@ -120,6 +122,7 @@ cli_regions
 
 		if (!options.delete && !options.move) {
 			io.log('Found', ioRegions, 'prunable regions, totaling', ioSize);
+			io.debug('Empty:', tx.regions.filter(r => !r.size).length);
 			return;
 		}
 
