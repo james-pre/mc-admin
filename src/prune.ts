@@ -1,7 +1,7 @@
 import * as fs from 'node:fs';
 import { dirname, isAbsolute, join, relative } from 'node:path';
 import type { WithRequired } from 'utilium';
-import { get, TagType } from './common/nbt.js';
+import { TagType } from './common/nbt.js';
 import { Dimension, isLevel, Level, normalizeId, type RegionFile } from './level.js';
 import { Region as RegionData } from './region.js';
 import { concurrent, exists, filesIdentical, moveFile } from './utils.js';
@@ -138,16 +138,17 @@ export class Transaction extends EventEmitter<{
 
 					const stored = Array.from(region.entries()).length;
 
-					let readable = 0,
+					let unreadable = 0,
 						inhabitedTicks = 0n;
 
-					for await (const chunk of region.chunks()) {
-						readable++;
-						const tag = get(chunk.tag, 'InhabitedTime');
-						if (tag?.type === TagType.Long && tag.value > inhabitedTicks) inhabitedTicks = tag.value;
+					for (const entry of region.entries()) {
+						try {
+							const tag = await region.pick(entry, 'InhabitedTime');
+							if (tag?.type === TagType.Long && tag.value > inhabitedTicks) inhabitedTicks = tag.value;
+						} catch {
+							unreadable++;
+						}
 					}
-
-					const unreadable = stored - readable;
 
 					let keep: ExcludeReason | null = excluded.has(`${region.file.x},${region.file.z}`)
 						? 'excluded'

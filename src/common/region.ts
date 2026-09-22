@@ -1,7 +1,7 @@
 import { toBytes } from './buffers.js';
 import * as chunk from './chunk.js';
 import type { RegionFile } from './level.js';
-import { parse } from './nbt.js';
+import { parse, pick, type Tag } from './nbt.js';
 
 /** Region files are addressed in 4 KiB sectors. */
 export const sectorSize = 4096;
@@ -100,6 +100,11 @@ export class Region {
 	public async chunk(entry: chunk.Entry): Promise<chunk.Parsed> {
 		const raw = this.raw(entry);
 		return { ...raw, tag: parse(await chunk.payload(raw)).tag };
+	}
+
+	/** One value from a chunk's NBT, leaving the rest of the payload unparsed. */
+	public async pick(entry: chunk.Entry, ...path: (string | number)[]): Promise<Tag | null> {
+		return pick(await chunk.payload(this.raw(entry)), ...path);
 	}
 
 	/**

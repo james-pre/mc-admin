@@ -1,4 +1,4 @@
-import { decodeUTF8 } from 'utilium';
+import { decodeUTF8, encodeUTF8 } from 'utilium';
 import { decompress, toBytes } from './buffers.js';
 
 export enum TagType {
@@ -46,6 +46,23 @@ export interface ListTag extends TagOf<TagType.List> {
 	/** The type shared by every item. `End` when the list is empty. */
 	of: TagType;
 }
+
+/** The width of each tag whose body is a single fixed-size number. */
+const fixedWidths: Partial<Record<TagType, number>> = {
+	[TagType.Byte]: 1,
+	[TagType.Short]: 2,
+	[TagType.Int]: 4,
+	[TagType.Long]: 8,
+	[TagType.Float]: 4,
+	[TagType.Double]: 8,
+};
+
+/** The width of each element of an array tag. */
+const arrayWidths: Partial<Record<TagType, number>> = {
+	[TagType.ByteArray]: 1,
+	[TagType.IntArray]: 4,
+	[TagType.LongArray]: 8,
+};
 
 /** Every type that can appear as a value. `End` only ever terminates a compound. */
 export type ValueType = Exclude<TagType, TagType.End | TagType.List>;
@@ -110,6 +127,13 @@ export class Reader {
 		return value;
 	}
 
+	/** Move past `length` bytes, refusing a length that would leave the payload. */
+	protected advance(length: number): void {
+		if (length < 0 || this.offset + length > this.bytes.byteLength)
+			throw new RangeError(`tag at ${this.offset} runs past the end of the payload`);
+		this.offset += length;
+	}
+
 	/** A length-prefixed name or string value. */
 	public string(): string {
 		const length = this.view.getUint16(this.offset);
@@ -118,6 +142,89 @@ export class Reader {
 		const value = decodeUTF8(this.bytes.subarray(this.offset, this.offset + length));
 		this.offset += length;
 		return value;
+	}
+
+	/** Move past a length-prefixed name or string value without decoding it. */
+	public skipString(): void {
+		this.advance(2 + this.view.getUint16(this.offset));
+	}
+
+	/**
+	 * Whether the next name is `expected`, moving past it either way.
+	 * Comparing the raw bytes avoids decoding the names of tags that are about to be skipped.
+	 */
+	protected matchName(expected: Uint8Array): boolean {
+		const length = this.view.getUint16(this.offset);
+		const start = this.offset + 2;
+		this.advance(2 + length);
+
+		if (length !== expected.byteLength) return false;
+		for (let i = 0; i < length; i++) if (this.bytes[start + i] !== expected[i]) return false;
+		return true;
+	}
+
+	/** Move past the body of a tag whose type byte has already been read, without building it. */
+	public skip(type: TagType): void {
+		const fixed = fixedWidths[type];
+		if (fixed) return this.advance(fixed);
+
+		const width = arrayWidths[type];
+		if (width) return this.advance(this.int32() * width);
+
+		switch (type) {
+			case TagType.String:
+				return this.skipString();
+			case TagType.List: {
+				const of = this.type();
+				const length = this.int32();
+				if (of === TagType.End) return;
+
+				const element = fixedWidths[of];
+				if (element) return this.advance(element * length);
+
+				for (let i = 0; i < length; i++) this.skip(of);
+				return;
+			}
+			case TagType.Compound:
+				for (let child = this.type(); child !== TagType.End; child = this.type()) {
+					this.skipString();
+					this.skip(child);
+				}
+				return;
+			default:
+				throw new TypeError(`${TagType[type]} is not a value at ${this.offset - 1}`);
+		}
+	}
+
+	/**
+	 * The tag at `path` below a tag whose type byte has already been read, or null when any step is
+	 * missing or the wrong type. Everything off the path is skipped rather than built.
+	 */
+	public pick(type: TagType, path: readonly (string | number)[]): Tag | null {
+		if (!path.length) return this.tag(type);
+
+		const [key, ...rest] = path;
+
+		if (typeof key === 'number') {
+			if (type !== TagType.List) return null;
+
+			const of = this.type();
+			const length = this.int32();
+			if (of === TagType.End || key < 0 || key >= length) return null;
+
+			for (let i = 0; i < key; i++) this.skip(of);
+			return this.pick(of, rest);
+		}
+
+		if (type !== TagType.Compound) return null;
+
+		const name = encodeUTF8(key);
+		for (let child = this.type(); child !== TagType.End; child = this.type()) {
+			if (this.matchName(name)) return this.pick(child, rest);
+			this.skip(child);
+		}
+
+		return null;
 	}
 
 	/** The type byte introducing the next tag. */
@@ -193,6 +300,18 @@ export function parse(data: BufferSource): Named {
 }
 
 /**
+ * {@link get}, but reading straight from a payload so that everything off `path` is skipped
+ * instead of being built. Much cheaper when a payload is far larger than the part you want.
+ */
+export function pick(data: BufferSource, ...path: (string | number)[]): Tag | null {
+	const reader = new Reader(data);
+	const type = reader.type();
+	if (type === TagType.End) throw new TypeError('payload is empty');
+	reader.skipString();
+	return reader.pick(type, path);
+}
+
+/**
  * Parse an NBT file, decompressing it first when it needs it.
  */
 export async function parseCompressed(data: BufferSource): Promise<Named> {
@@ -212,7 +331,7 @@ export function get(tag: Tag | null, ...path: (string | number)[]): Tag | null {
 		if (!current) return null;
 		if (typeof key === 'number') {
 			if (current.type !== TagType.List) return null;
-			current = current.value[key];
+			current = current.value[key] ?? null;
 			continue;
 		}
 		if (current.type !== TagType.Compound) return null;
