@@ -1,13 +1,11 @@
 import * as fs from 'node:fs/promises';
 import { basename, join, resolve, sep } from 'node:path';
-import type { WithRequired } from 'utilium';
 import type { Parsed as Chunk } from './common/chunk.js';
 import type { RegionFile, RegionKind } from './common/level.js';
 import { normalizeId, regionKinds, vanillaDimensions, vanillaIds } from './common/level.js';
 import type { Named } from './common/nbt.js';
 import { parseCompressed } from './common/nbt.js';
 import { parseName, Region, regionSize } from './common/region.js';
-import { concurrent } from './utils.js';
 export * from './common/level.js';
 
 async function exists(path: string): Promise<boolean> {
@@ -72,44 +70,6 @@ export class Dimension {
 	public async region(x: number, z: number, kind: RegionKind = 'region'): Promise<Region> {
 		const { path } = this.regionFile(kind, x, z);
 		return new Region(await fs.readFile(path));
-	}
-
-	public async mapFilterRegions<T>(
-		map: (file: WithRequired<Region, 'file'>) => T | null | undefined | Promise<T | null | undefined>,
-		concurrency: number = 4,
-	): Promise<T[]> {
-		const results: T[] = [];
-
-		await concurrent(await this.regionFiles(), concurrency, async file => {
-			try {
-				const region = new Region(await fs.readFile(file.path), file) as WithRequired<Region, 'file'>;
-
-				const result = await map(region);
-				if (result !== null && result !== undefined) results.push(result);
-			} catch {
-				// do nothing
-			}
-		});
-
-		return results;
-	}
-
-	public async filterRegions(
-		predicate: (file: WithRequired<Region, 'file'>) => boolean | Promise<boolean>,
-		concurrency: number = 4,
-	): Promise<WithRequired<Region, 'file'>[]> {
-		const found: WithRequired<Region, 'file'>[] = [];
-
-		await concurrent(await this.regionFiles(), concurrency, async file => {
-			try {
-				const region = new Region(await fs.readFile(file.path), file) as WithRequired<Region, 'file'>;
-				if (await predicate(region)) found.push(region);
-			} catch {
-				// do nothing
-			}
-		});
-
-		return found;
 	}
 
 	/** The chunk at chunk coordinates, or null when the dimension has never stored it. */
