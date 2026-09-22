@@ -1,5 +1,6 @@
 import { toBytes } from './buffers.js';
 import * as chunk from './chunk.js';
+import type { RegionFile } from './level.js';
 import { parse } from './nbt.js';
 
 /** Region files are addressed in 4 KiB sectors. */
@@ -23,7 +24,10 @@ export class Region {
 	public readonly data: Uint8Array<ArrayBuffer>;
 	protected readonly view: DataView;
 
-	public constructor(data: BufferSource) {
+	public constructor(
+		data: BufferSource,
+		public readonly file?: RegionFile,
+	) {
 		this.data = toBytes(data);
 		this.view = new DataView(this.data.buffer, this.data.byteOffset, this.data.byteLength);
 	}
@@ -104,11 +108,24 @@ export class Region {
 	 * A single bad chunk ends the iteration, since there is no way to report it otherwise. To
 	 * survive damaged regions, walk {@link entries} and call {@link chunk} inside a try/catch.
 	 */
-	public async *chunks(): AsyncGenerator<chunk.Parsed> {
+	public async *chunksUnsafe(): AsyncGenerator<chunk.Parsed> {
 		for (const entry of this.entries()) yield await this.chunk(entry);
 	}
 
-	public async findChunks(predicate: (chunk: chunk.Parsed) => boolean): Promise<chunk.Parsed[]> {
+	/**
+	 * Every chunk's NBT.
+	 */
+	public async *chunks(onError?: (error: Error, entry: chunk.Entry) => void): AsyncGenerator<chunk.Parsed> {
+		for (const entry of this.entries()) {
+			try {
+				yield await this.chunk(entry);
+			} catch (e: any) {
+				onError?.(e, entry);
+			}
+		}
+	}
+
+	public async filterChunks(predicate: (chunk: chunk.Parsed) => boolean): Promise<chunk.Parsed[]> {
 		const chunks: chunk.Parsed[] = [];
 		for (const entry of this.entries()) {
 			try {

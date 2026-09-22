@@ -1,40 +1,17 @@
-import { access, readdir, readFile } from 'node:fs/promises';
+import * as fs from 'node:fs/promises';
 import { basename, join, resolve, sep } from 'node:path';
+import type { WithRequired } from 'utilium';
+import type { Parsed as Chunk } from './common/chunk.js';
+import type { RegionFile, RegionKind } from './common/level.js';
+import { normalizeId, regionKinds, vanillaDimensions, vanillaIds } from './common/level.js';
 import type { Named } from './common/nbt.js';
 import { parseCompressed } from './common/nbt.js';
-import type { Parsed as Chunk } from './common/chunk.js';
 import { parseName, Region, regionSize } from './common/region.js';
-
-/** The directory each vanilla dimension uses, relative to the level root. */
-export const vanillaDimensions = {
-	'minecraft:overworld': '',
-	'minecraft:the_nether': 'DIM-1',
-	'minecraft:the_end': 'DIM1',
-} as const;
-
-const vanillaIds = new Map<string, string>(
-	Object.entries(vanillaDimensions)
-		.filter(([, dir]) => dir)
-		.map(([id, dir]) => [dir, id]),
-);
-
-/** The subdirectories a dimension splits its region files across, all on the same grid. */
-export const regionKinds = ['region', 'entities', 'poi'] as const;
-
-export type RegionKind = (typeof regionKinds)[number];
-
-/** A region file's coordinates and location on disk. */
-export interface RegionFile {
-	kind: RegionKind;
-	/** Region coordinates. */
-	x: number;
-	z: number;
-	name: string;
-	path: string;
-}
+import { concurrent } from './utils.js';
+export * from './common/level.js';
 
 async function exists(path: string): Promise<boolean> {
-	return await access(path).then(
+	return await fs.access(path).then(
 		() => true,
 		() => false,
 	);
@@ -42,17 +19,11 @@ async function exists(path: string): Promise<boolean> {
 
 /** The names of every subdirectory, sorted, or nothing when the directory is missing. */
 async function subdirectories(path: string): Promise<string[]> {
-	const entries = await readdir(path, { withFileTypes: true }).catch(() => []);
+	const entries = await fs.readdir(path, { withFileTypes: true }).catch(() => []);
 	return entries
 		.filter(entry => entry.isDirectory())
 		.map(entry => entry.name)
 		.sort();
-}
-
-/** A id (e.g. for dimensions) with its namespace made explicit, so ids from different sources compare equal. */
-export function normalizeId(id: string): string {
-	const lower = id.toLowerCase();
-	return lower.includes(':') ? lower : `minecraft:${lower}`;
 }
 
 /** Whether a directory is a level root rather than a single dimension's directory. */
@@ -60,11 +31,6 @@ export async function isLevel(path: string): Promise<boolean> {
 	const markers = ['level.dat', 'dimensions', ...vanillaIds.keys()];
 	const found = await Promise.all(markers.map(marker => exists(join(path, marker))));
 	return found.includes(true);
-}
-
-/** Read and parse a region file. */
-export async function openRegion(file: RegionFile | string): Promise<Region> {
-	return new Region(await readFile(typeof file == 'string' ? file : file.path));
 }
 
 const localCoord = (value: number) => ((value % regionSize) + regionSize) % regionSize;
@@ -86,7 +52,7 @@ export class Dimension {
 
 	/** Every region file of one kind, sorted by name. */
 	public async regionFiles(kind: RegionKind = 'region'): Promise<RegionFile[]> {
-		const names = await readdir(join(this.path, kind)).catch(() => []);
+		const names = await fs.readdir(join(this.path, kind)).catch(() => []);
 		const files: RegionFile[] = [];
 		for (const name of names.sort()) {
 			const coords = parseName(name);
@@ -104,14 +70,53 @@ export class Dimension {
 
 	/** Read the region at region coordinates. */
 	public async region(x: number, z: number, kind: RegionKind = 'region'): Promise<Region> {
-		return await openRegion(this.regionFile(kind, x, z));
+		const { path } = this.regionFile(kind, x, z);
+		return new Region(await fs.readFile(path));
+	}
+
+	public async mapFilterRegions<T>(
+		map: (file: WithRequired<Region, 'file'>) => T | null | undefined | Promise<T | null | undefined>,
+		concurrency: number = 4,
+	): Promise<T[]> {
+		const results: T[] = [];
+
+		await concurrent(await this.regionFiles(), concurrency, async file => {
+			try {
+				const region = new Region(await fs.readFile(file.path), file) as WithRequired<Region, 'file'>;
+
+				const result = await map(region);
+				if (result !== null && result !== undefined) results.push(result);
+			} catch {
+				// do nothing
+			}
+		});
+
+		return results;
+	}
+
+	public async filterRegions(
+		predicate: (file: WithRequired<Region, 'file'>) => boolean | Promise<boolean>,
+		concurrency: number = 4,
+	): Promise<WithRequired<Region, 'file'>[]> {
+		const found: WithRequired<Region, 'file'>[] = [];
+
+		await concurrent(await this.regionFiles(), concurrency, async file => {
+			try {
+				const region = new Region(await fs.readFile(file.path), file) as WithRequired<Region, 'file'>;
+				if (await predicate(region)) found.push(region);
+			} catch {
+				// do nothing
+			}
+		});
+
+		return found;
 	}
 
 	/** The chunk at chunk coordinates, or null when the dimension has never stored it. */
 	public async chunk(x: number, z: number, kind: RegionKind = 'region'): Promise<Chunk | null> {
 		const file = this.regionFile(kind, Math.floor(x / regionSize), Math.floor(z / regionSize));
 		try {
-			const region = await openRegion(file);
+			const region = new Region(await fs.readFile(file.path));
 			const entry = region.at(localCoord(x), localCoord(z));
 			return entry && (await region.chunk(entry));
 		} catch {
@@ -158,7 +163,7 @@ export class Level {
 
 	/** Read and parse an NBT file in the level directory. */
 	public async nbt(...path: string[]): Promise<Named> {
-		return await parseCompressed(await readFile(join(this.path, ...path)));
+		return await parseCompressed(await fs.readFile(join(this.path, ...path)));
 	}
 
 	/** The level's `level.dat`. */
@@ -168,7 +173,7 @@ export class Level {
 
 	/** The UUIDs of every player with saved data, sorted. */
 	public async players(): Promise<string[]> {
-		const names = await readdir(join(this.path, 'playerdata')).catch(() => []);
+		const names = await fs.readdir(join(this.path, 'playerdata')).catch(() => []);
 		return names
 			.filter(name => name.endsWith('.dat'))
 			.map(name => basename(name, '.dat'))
