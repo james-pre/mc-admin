@@ -105,7 +105,7 @@ cli_regions
 		io.setTableTargetWidth(process.stdout.columns);
 		io.table(
 			[
-				{ name: 'Dimension', text: r => styleText('dim', r.dimension.id) },
+				{ name: 'Dimension', text: r => styleText('dim', r.dimension.id), grow: 0 },
 				{ name: 'Region File', text: r => r.name },
 				{ name: 'Chunks', text: r => styleText('blue', r.chunks.toString()), padStart: true },
 				{ name: 'Size', text: r => styleText('cyan', formatBytes(r.size)), padStart: true },
