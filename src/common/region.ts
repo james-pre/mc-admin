@@ -107,4 +107,17 @@ export class Region {
 	public async *chunks(): AsyncGenerator<chunk.Parsed> {
 		for (const entry of this.entries()) yield await this.chunk(entry);
 	}
+
+	public async findChunks(predicate: (chunk: chunk.Parsed) => boolean): Promise<chunk.Parsed[]> {
+		const chunks: chunk.Parsed[] = [];
+		for (const entry of this.entries()) {
+			try {
+				const chunk = await this.chunk(entry);
+				if (predicate(chunk)) chunks.push(chunk);
+			} catch {
+				// Ignore chunks that can't be read
+			}
+		}
+		return chunks;
+	}
 }
