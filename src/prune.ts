@@ -79,7 +79,7 @@ export interface Result {
 }
 
 export class Transaction extends EventEmitter<{
-	prepare_error: [error: Error, file: RegionFile];
+	prepare_error: [error: Error, file: RegionFile, dimension: Dimension];
 	prepare_exclude: [reason: ExcludeReason, region: Region];
 	execute_error: [error: Error, region: Region];
 }> {
@@ -180,39 +180,40 @@ export class Transaction extends EventEmitter<{
 							if (options.delete) {
 								txRegion.deletes.push(file.path);
 								txRegion.size += size;
-							} else {
-								const dest = isAbsolute(into)
-									? join(into, isForLevel ? relative(dimension.level, dimension.path) : '', file.kind, file.name)
-									: join(dimension.path, file.kind, into, file.name);
+								return;
+							}
 
-								try {
-									if (await filesIdentical(file.path, dest)) {
-										txRegion.moves.push({ src: file.path, dest, duplicate: true, overwrite: false });
-										txRegion.size += size;
-										return;
-									}
+							const dest = isAbsolute(into)
+								? join(into, isForLevel ? relative(dimension.level, dimension.path) : '', file.kind, file.name)
+								: join(dimension.path, file.kind, into, file.name);
 
-									switch (options.conflicting) {
-										case 'exclude':
-											keep = 'conflict';
-											break;
-										case 'preserve':
-											txRegion.deletes.push(file.path);
-											txRegion.size += size;
-											break;
-										case 'overwrite':
-											txRegion.moves.push({ src: file.path, dest, duplicate: false, overwrite: true });
-											txRegion.size += size;
-											break;
-										case 'throw':
-										default:
-											throw new Error(`destination exists and differs: ${dest}`);
-									}
-								} catch (e: any) {
-									if (e.code !== 'ENOENT') throw e;
+							try {
+								if (await filesIdentical(file.path, dest)) {
+									txRegion.moves.push({ src: file.path, dest, duplicate: true, overwrite: false });
 									txRegion.size += size;
-									txRegion.moves.push({ src: file.path, dest, duplicate: false, overwrite: false });
+									return;
 								}
+
+								switch (options.conflicting) {
+									case 'exclude':
+										keep = 'conflict';
+										break;
+									case 'preserve':
+										txRegion.deletes.push(file.path);
+										txRegion.size += size;
+										break;
+									case 'overwrite':
+										txRegion.moves.push({ src: file.path, dest, duplicate: false, overwrite: true });
+										txRegion.size += size;
+										break;
+									case 'throw':
+									default:
+										throw new Error(`destination exists and differs: ${dest}`);
+								}
+							} catch (e: any) {
+								if (e.code !== 'ENOENT') throw e;
+								txRegion.size += size;
+								txRegion.moves.push({ src: file.path, dest, duplicate: false, overwrite: false });
 							}
 						}),
 					);
@@ -226,7 +227,7 @@ export class Transaction extends EventEmitter<{
 					this.regions.push(txRegion);
 				} catch (e: any) {
 					if (options.atomic) throw e;
-					this.emit('prepare_error', e, file);
+					this.emit('prepare_error', e, file, dimension);
 				}
 			});
 		}

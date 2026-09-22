@@ -74,7 +74,9 @@ cli_regions
 		const into = typeof options.move == 'string' ? resolve(options.move) : null;
 
 		const tx = new prune.Transaction(world)
-			.on('prepare_error', (err, file) => io.error(styleText('bold', file.path), io.errorText(err)))
+			.on('prepare_error', (err, file, dim) =>
+				io.error(styleText('dim', dim.id), styleText('bold', `${file.x},${file.z}`), io.errorText(err)),
+			)
 			.on('prepare_exclude', (reason, region) => {
 				if (!options.verbose && !surprising.includes(reason)) return;
 				const text = `${styleText('dim', region.dimension.id)} ${styleText('bold', region.name)} kept: ${excludeReasons[reason]}`;
