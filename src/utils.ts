@@ -29,14 +29,14 @@ export async function filesIdentical(a: string, b: string): Promise<boolean> {
 }
 
 /** Move a file, falling back to a copy when the destination is on another filesystem. */
-export async function moveFile(src: string, dest: string): Promise<void> {
+export async function moveFile(src: string, dest: string, overwrite: boolean = false): Promise<void> {
 	await fs.mkdir(dirname(dest), { recursive: true });
 	try {
 		await fs.rename(src, dest);
 	} catch (error) {
 		if ((error as NodeJS.ErrnoException).code !== 'EXDEV') throw error;
 		const { atime, mtime } = await fs.stat(src);
-		await fs.copyFile(src, dest, constants.COPYFILE_EXCL);
+		await fs.copyFile(src, dest, overwrite ? 0 : constants.COPYFILE_EXCL);
 		await fs.utimes(dest, atime, mtime);
 		await fs.rm(src);
 	}

@@ -11,7 +11,8 @@ export const configManager = new ConfigManager(
 				z.templateLiteral([z.int(), ',', z.int()]).array(),
 			)
 			.default({}),
-		prune_threshold: z.number().min(0).default(5),
+		/** Keep regions with at least this much play time, in seconds. */
+		prune_threshold: z.number().min(0).default(300),
 	}),
 	{ system: 'mc-admin' },
 );
