@@ -41,3 +41,19 @@ export async function moveFile(src: string, dest: string): Promise<void> {
 		await fs.rm(src);
 	}
 }
+
+export async function exists(path: string): Promise<boolean> {
+	return await fs.access(path).then(
+		() => true,
+		() => false,
+	);
+}
+
+/** The names of every subdirectory, sorted, or nothing when the directory is missing. */
+export async function subdirectories(path: string): Promise<string[]> {
+	const entries = await fs.readdir(path, { withFileTypes: true }).catch(() => []);
+	return entries
+		.filter(entry => entry.isDirectory())
+		.map(entry => entry.name)
+		.sort();
+}

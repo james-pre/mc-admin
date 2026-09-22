@@ -7,22 +7,7 @@ import type { Named } from './common/nbt.js';
 import { parseCompressed } from './common/nbt.js';
 import { parseName, Region, regionSize } from './common/region.js';
 export * from './common/level.js';
-
-async function exists(path: string): Promise<boolean> {
-	return await fs.access(path).then(
-		() => true,
-		() => false,
-	);
-}
-
-/** The names of every subdirectory, sorted, or nothing when the directory is missing. */
-async function subdirectories(path: string): Promise<string[]> {
-	const entries = await fs.readdir(path, { withFileTypes: true }).catch(() => []);
-	return entries
-		.filter(entry => entry.isDirectory())
-		.map(entry => entry.name)
-		.sort();
-}
+import { exists, subdirectories } from './utils.js';
 
 /** Whether a directory is a level root rather than a single dimension's directory. */
 export async function isLevel(path: string): Promise<boolean> {
