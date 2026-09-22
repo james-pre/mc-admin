@@ -42,9 +42,10 @@
 		"prepublishOnly": "npx tsc -b"
 	},
 	"dependencies": {
+		"@james-pre/config": "^1.1.0",
 		"commander": "^15.0.0",
-		"ioium": "^1.10.0",
-		"utilium": "^3.7.1"
+		"ioium": "^1.10.1",
+		"utilium": "^3.8.0"
 	},
 	"devDependencies": {
 		"@commander-js/extra-typings": "^15.0.0",

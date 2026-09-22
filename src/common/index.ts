@@ -1,3 +1,4 @@
+export * as chunk from './chunk.js';
 export * as log from './log.js';
 export * as nbt from './nbt.js';
 export * as rcon from './rcon.js';

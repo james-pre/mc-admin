@@ -2,7 +2,7 @@ import { access, readdir, readFile } from 'node:fs/promises';
 import { basename, join, resolve, sep } from 'node:path';
 import type { Named } from './common/nbt.js';
 import { parseCompressed } from './common/nbt.js';
-import type { Chunk } from './common/region.js';
+import type { Parsed as Chunk } from './common/chunk.js';
 import { parseName, Region, regionSize } from './common/region.js';
 
 /** The directory each vanilla dimension uses, relative to the level root. */

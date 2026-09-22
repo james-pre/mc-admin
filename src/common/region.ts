@@ -1,5 +1,5 @@
-import { decompress, toBytes } from './buffers.js';
-import type { Tag } from './nbt.js';
+import { toBytes } from './buffers.js';
+import * as chunk from './chunk.js';
 import { parse } from './nbt.js';
 
 /** Region files are addressed in 4 KiB sectors. */
@@ -10,66 +10,6 @@ export const regionSize = 32;
 
 /** Chunks per region. */
 export const chunkCount = regionSize * regionSize;
-
-export enum Compression {
-	GZip = 1,
-	ZLib = 2,
-	None = 3,
-	LZ4 = 4,
-	Custom = 127,
-}
-
-/** Set on a chunk's compression byte when its payload lives in a `c.<x>.<z>.mcc` file instead. */
-export const externalFlag = 0x80;
-
-/** Where a chunk sits in the file, from the header alone. */
-export interface ChunkEntry {
-	/** The chunk's index in the header, `x + z * 32`. */
-	index: number;
-	/** Chunk coordinates within the region, 0 to 31. */
-	x: number;
-	z: number;
-	/** Byte offset of the chunk's record. */
-	offset: number;
-	/** Length of the chunk's allocation, in sectors. */
-	sectors: number;
-	/** When the chunk was last written, in epoch seconds; 0 if it never was. */
-	timestamp: number;
-}
-
-export interface RawChunk extends ChunkEntry {
-	compression: Compression;
-	/** The payload is in a `c.<x>.<z>.mcc` file next to the region, and `data` is empty. */
-	external: boolean;
-	/** The still-compressed NBT payload. */
-	data: Uint8Array<ArrayBuffer>;
-}
-
-export interface Chunk extends RawChunk {
-	tag: Tag;
-}
-
-const formats: Partial<Record<Compression, 'gzip' | 'deflate'>> = {
-	[Compression.GZip]: 'gzip',
-	[Compression.ZLib]: 'deflate',
-};
-
-/**
- * Decompress a chunk's NBT payload.
- *
- * @throws When the chunk is external, or compressed with a scheme this can't undo — LZ4 and the
- * `Custom` escape hatch, both of which only a modded server writes.
- */
-export async function payload(chunk: RawChunk): Promise<Uint8Array<ArrayBuffer>> {
-	if (chunk.external) throw new Error(`chunk ${chunk.x},${chunk.z} is stored externally`);
-	if (chunk.compression === Compression.None) return chunk.data;
-	const format = formats[chunk.compression];
-	if (!format)
-		throw new Error(
-			`chunk ${chunk.x},${chunk.z} uses unsupported compression (${Compression[chunk.compression] ?? chunk.compression})`,
-		);
-	return await decompress(chunk.data, format);
-}
 
 const namePattern = /^r\.(-?\d+)\.(-?\d+)\.mca$/;
 
@@ -99,7 +39,7 @@ export class Region {
 	}
 
 	/** Where chunk `index` lives, or null when the region has never stored it. */
-	public entry(index: number): ChunkEntry | null {
+	public entry(index: number): chunk.Entry | null {
 		if (index < 0 || index >= chunkCount) throw new RangeError(`chunk index ${index} is outside the region`);
 		if (this.empty) return null;
 
@@ -118,12 +58,12 @@ export class Region {
 	}
 
 	/** Where the chunk at region-local coordinates lives, or null when the region lacks it. */
-	public at(x: number, z: number): ChunkEntry | null {
+	public at(x: number, z: number): chunk.Entry | null {
 		return this.entry(x + z * regionSize);
 	}
 
 	/** Every chunk the region actually stores. */
-	public *entries(): Generator<ChunkEntry> {
+	public *entries(): Generator<chunk.Entry> {
 		for (let index = 0; index < chunkCount; index++) {
 			const entry = this.entry(index);
 			if (entry) yield entry;
@@ -135,7 +75,7 @@ export class Region {
 	 *
 	 * @throws When the header points outside the file, which means the region is truncated.
 	 */
-	public raw(entry: ChunkEntry): RawChunk {
+	public raw(entry: chunk.Entry): chunk.Raw {
 		const { offset } = entry;
 		if (offset + 5 > this.data.byteLength) throw new RangeError(`chunk ${entry.x},${entry.z} starts past the end of the region`);
 
@@ -146,16 +86,16 @@ export class Region {
 		const flags = this.view.getUint8(offset + 4);
 		return {
 			...entry,
-			compression: flags & ~externalFlag,
-			external: (flags & externalFlag) !== 0,
+			compression: flags & ~chunk.externalFlag,
+			external: (flags & chunk.externalFlag) !== 0,
 			data: this.data.subarray(offset + 5, end),
 		};
 	}
 
 	/** A chunk's NBT. */
-	public async chunk(entry: ChunkEntry): Promise<Chunk> {
+	public async chunk(entry: chunk.Entry): Promise<chunk.Parsed> {
 		const raw = this.raw(entry);
-		return { ...raw, tag: parse(await payload(raw)).tag };
+		return { ...raw, tag: parse(await chunk.payload(raw)).tag };
 	}
 
 	/**
@@ -164,7 +104,7 @@ export class Region {
 	 * A single bad chunk ends the iteration, since there is no way to report it otherwise. To
 	 * survive damaged regions, walk {@link entries} and call {@link chunk} inside a try/catch.
 	 */
-	public async *chunks(): AsyncGenerator<Chunk> {
+	public async *chunks(): AsyncGenerator<chunk.Parsed> {
 		for (const entry of this.entries()) yield await this.chunk(entry);
 	}
 }
