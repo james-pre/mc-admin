@@ -123,6 +123,8 @@ export class Transaction extends EventEmitter<{
 
 		const into = options.into ?? 'old';
 
+		const checkedDirs = new Set<string>();
+
 		for (const dimension of dimensions) {
 			const excluded = new Set(options.exclude?.[normalizeId(dimension.id)]);
 
@@ -174,7 +176,10 @@ export class Transaction extends EventEmitter<{
 
 					await Promise.all(
 						files.map(async file => {
-							await fs.promises.access(dirname(file.path), fs.constants.W_OK | fs.constants.X_OK);
+							if (!checkedDirs.has(dirname(file.path))) {
+								await fs.promises.access(dirname(file.path), fs.constants.W_OK | fs.constants.X_OK);
+								checkedDirs.add(dirname(file.path));
+							}
 							const { size } = await fs.promises.stat(file.path);
 
 							if (options.delete) {
