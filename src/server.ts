@@ -1,4 +1,4 @@
-import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
+import { spawn, spawnSync, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { EventEmitter } from 'node:events';
 import { chmodSync, lstatSync, rmSync } from 'node:fs';
 import { createConnection, createServer, type Socket } from 'node:net';
@@ -36,6 +36,13 @@ export function memoryArgs(memory: Memory): string[] {
 		const value = memory[key as keyof Memory];
 		return value === undefined ? [] : [flag + jvmSize(value)];
 	});
+}
+
+/** The version of a Java executable, or null when it can't be run. */
+export function javaVersion(java: string): string | null {
+	const { stderr, error } = spawnSync(java, ['-version'], { encoding: 'utf8', timeout: 10_000 });
+	if (error) return null;
+	return /version "([^"]+)"/.exec(stderr)?.[1] ?? null;
 }
 
 export interface LaunchOptions {

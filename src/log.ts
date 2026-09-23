@@ -1,9 +1,10 @@
-import { existsSync, watch, type FSWatcher } from 'node:fs';
+import { closeSync, existsSync, openSync, readSync, watch, type FSWatcher } from 'node:fs';
 import { open, stat, type FileHandle } from 'node:fs/promises';
 import { basename, dirname } from 'node:path';
-import { toLines } from './common/buffers.js';
-import { parse, type LogLevel, type LogLine } from './common/log.js';
 import { styleText, type InspectColor } from 'node:util';
+import { decodeUTF8 } from 'utilium';
+import { toLines } from './common/buffers.js';
+import { parse, parseStartupInfo, type LogLevel, type LogLine, type StartupInfo } from './common/log.js';
 import { highlight } from './snbt.js';
 
 export * from './common/log.js';
@@ -133,6 +134,27 @@ export function follow(path: string, options: FollowOptions = {}): ReadableStrea
 /** Follow a file, emitting each line appended to it. */
 export function tail(path: string, options?: FollowOptions): ReadableStream<string> {
 	return toLines(follow(path, options));
+}
+
+const startupSize = 1024 * 1024;
+
+/** Parse the start of a server log, which is empty when the log doesn't exist. */
+export function readStartupInfo(path: string): StartupInfo {
+	let fd;
+	try {
+		fd = openSync(path, 'r');
+	} catch (error) {
+		if ((error as NodeJS.ErrnoException).code == 'ENOENT') return {};
+		throw error;
+	}
+
+	try {
+		const buffer = new Uint8Array(startupSize);
+		const bytesRead = readSync(fd, buffer, 0, startupSize, 0);
+		return parseStartupInfo(decodeUTF8(buffer.subarray(0, bytesRead)).split(/\r?\n/));
+	} finally {
+		closeSync(fd);
+	}
 }
 
 export const levelColors: Record<LogLevel, InspectColor> = {
