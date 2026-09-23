@@ -12,7 +12,7 @@ export interface LogLine {
 	message: string;
 }
 
-const linePattern = new RegExp(String.raw`^\[(\d{2}:\d{2}:\d{2})\] \[([^\]]*)\/(${logLevels.join('|')})\]:\s*(.*)$`);
+const linePattern = new RegExp(String.raw`^\[(\d{2}:\d{2}:\d{2})\] \[(.*?)\/(${logLevels.join('|')})\]:\s*(.*)$`);
 
 /** Parse a server log line, or null when it isn't one. */
 export function parse(line: string): LogLine | null {
