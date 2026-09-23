@@ -7,7 +7,6 @@ import { once } from 'node:events';
 import { existsSync, statSync } from 'node:fs';
 import { constants, homedir } from 'node:os';
 import { join, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { styleText } from 'node:util';
 import { _throw, pick } from 'utilium';
 import { bytes as formatBytes } from 'utilium/format';
@@ -304,7 +303,7 @@ serviceCommand(cli, {
 				`The server directory is owned by someone else, so ${account.name} may not be able to use it. To fix this, run: chown -R ${account.name}: ${path}`,
 			);
 
-		const argv = [process.execPath, fileURLToPath(new URL('main.js', import.meta.url))];
+		const argv = [join(import.meta.dirname, 'main.js')];
 		const { config: configFile } = cli.opts();
 		if (configFile) argv.push('--config', resolve(configFile));
 		argv.push('run');
