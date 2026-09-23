@@ -10,7 +10,7 @@ export interface PingOptions extends TcpSocketConnectOpts {
 }
 
 /** Ask a server for its status over the Server List Ping protocol. */
-export async function ping(options: PingOptions): Promise<Status> {
+export default async function ping(options: PingOptions): Promise<Status> {
 	const { host = 'localhost', port, timeout = 5000 } = options;
 
 	const socket = connect({ ...options, host });
@@ -27,3 +27,5 @@ export async function ping(options: PingOptions): Promise<Status> {
 		socket.destroy();
 	}
 }
+
+export { ping as send };

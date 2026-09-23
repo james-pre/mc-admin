@@ -13,6 +13,7 @@ import { bytes as formatBytes } from 'utilium/format';
 import $pkg from '../package.json' with { type: 'json' };
 import { config, configManager } from './config.js';
 import * as log from './log.js';
+import ping from './ping.js';
 import * as properties from './properties.js';
 import * as prune from './prune.js';
 import * as rcon from './rcon.js';
@@ -76,7 +77,7 @@ cli_regions
 		'throw',
 	)
 	.option('-i, --ignore-empty', 'ignore empty region files')
-	.action(async function (options) {
+	.action(async options => {
 		if (options.verbose) io._setDebugOutput(true);
 
 		const threshold = BigInt(Math.round(options.threshold ?? config.prune_threshold) * 20); // seconds -> ticks
@@ -226,7 +227,7 @@ cli.command('console')
 	.option('-p, --password <password>', 'RCON password (default: RCON_PASSWORD, or rcon.password from server.properties)')
 	.option('-l, --log <file>', 'server log to follow (default: logs/latest.log in the server directory)')
 	.option('-n, --lines <count>', 'lines of log to show on startup', count, 10)
-	.action(async function (options) {
+	.action(async options => {
 		const transport = (options.rcon ? null : await attachTransport(!!options.attach)) ?? (await rconTransport(options));
 
 		io.info(`Connected to ${transport.name}. Type "exit" or Ctrl+C to quit.`);
@@ -249,7 +250,7 @@ cli.command('console')
 cli.command('run')
 	.description('Run the server in the foreground')
 	.option('--no-socket', 'do not accept connections from `console`')
-	.action(async function (options) {
+	.action(async options => {
 		const path = resolve(config.path);
 
 		const stats = statSync(path, { throwIfNoEntry: false });
@@ -285,8 +286,46 @@ cli.command('run')
 		process.exitCode = code ?? 128 + constants.signals[signal!];
 	});
 
+function service(user?: boolean) {
+	return new systemd.Service(config.service.name, { user: user ?? config.service.scope == 'user' });
+}
+
+const unknown = styleText('dim', 'unknown');
+
+cli.command('status')
+	.description('Show the state of the server')
+	.action(async () => {
+		const path = resolve(config.path);
+		const props = properties.read(join(path, 'server.properties'));
+
+		console.log(styleText('whiteBright', 'Daemon:'), service().shortStatus());
+
+		const status = await ping({
+			host: props.get('server-ip') || 'localhost',
+			port: Number(props.get('server-port') || 25565),
+		}).catch(() => null);
+
+		let players = unknown;
+		if (status?.players) {
+			const { online, max, sample = [] } = status.players;
+			const names = sample.map(player => player.name);
+			if (online > names.length && names.length) names.push(styleText('dim', `and ${online - names.length} more`));
+			players = [`${online}/${max}`, names.join(', ')].filter(v => v).join(' ');
+		}
+		console.log(styleText('whiteBright', 'Players:'), players);
+
+		const startup = log.readStartupInfo(join(path, 'logs/latest.log'));
+
+		console.log(styleText('whiteBright', 'Minecraft:'), startup.minecraft ?? status?.version.name ?? unknown);
+		console.log(styleText('whiteBright', 'Fabric:'), startup.fabric ?? unknown);
+		console.log(styleText('whiteBright', 'Java:'), server.javaVersion(config.java) ?? styleText('red', `${config.java} not found`));
+
+		const mods = startup.mods ? `${startup.mods.length} ${styleText('dim', `(${startup.totalMods} total)`)}` : unknown;
+		console.log(styleText('whiteBright', 'Mods:'), mods);
+	});
+
 serviceCommand(cli, {
-	service: user => new systemd.Service(config.service.name, { user: user ?? config.service.scope == 'user' }),
+	service,
 	serviceUser: service =>
 		service.options.user ? undefined : { name: config.service.user, home: resolve(config.path), shell: '/bin/bash' },
 	source(service) {
