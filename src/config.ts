@@ -57,8 +57,8 @@ export const configManager = new ConfigManager(
 				name: z.string().default('minecraft'),
 				/** Whether the service belongs to the system's service manager or the user's (`systemctl --user`). */
 				scope: z.enum(['system', 'user']).default('system'),
-				/** Who a system service runs as, by default the owner of the server path. */
-				user: z.string().optional(),
+				/** The system user a system service runs as, which installing the service creates. */
+				user: z.string().default('mc'),
 				group: z.string().optional(),
 			})
 			.prefault({}),

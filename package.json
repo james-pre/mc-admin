@@ -42,7 +42,7 @@
 	},
 	"dependencies": {
 		"@james-pre/config": "^1.2.0",
-		"@james-pre/systemd": "^0.1.1",
+		"@james-pre/systemd": "^0.2.0",
 		"commander": "^15.0.0",
 		"ioium": "^1.10.1",
 		"utilium": "^3.9.0"

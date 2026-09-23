@@ -288,6 +288,8 @@ cli.command('run')
 
 serviceCommand(cli, {
 	service: user => new systemd.Service(config.service.name, { user: user ?? config.service.scope == 'user' }),
+	serviceUser: service =>
+		service.options.user ? undefined : { name: config.service.user, home: resolve(config.path), shell: '/bin/bash' },
 	source(service) {
 		const user = !!service.options.user;
 
@@ -296,14 +298,11 @@ serviceCommand(cli, {
 		const stats = statSync(path, { throwIfNoEntry: false });
 		if (!stats?.isDirectory()) io.exit(`invalid server directory: ${path}`);
 
-		let account = user ? undefined : config.service.user;
-		if (!user && !account) {
-			if (stats.uid) account = stats.uid.toString();
-			else
-				io.warn(
-					'The server directory is owned by root, so the server will run as root. Set service.user to run it as someone else.',
-				);
-		}
+		const account = user ? null : systemd.getUser(config.service.user);
+		if (account && stats.uid != account.uid)
+			io.warn(
+				`The server directory is owned by someone else, so ${account.name} may not be able to use it. To fix this, run: chown -R ${account.name}: ${path}`,
+			);
 
 		const argv = [process.execPath, fileURLToPath(new URL('main.js', import.meta.url))];
 		const { config: configFile } = cli.opts();
@@ -320,7 +319,7 @@ serviceCommand(cli, {
 				},
 				Service: {
 					Type: 'simple',
-					User: account,
+					User: account?.name,
 					Group: user ? undefined : config.service.group,
 					WorkingDirectory: systemd.literal(path),
 					ExecStart: systemd.command(...argv),
