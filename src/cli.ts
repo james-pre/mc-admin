@@ -71,7 +71,7 @@ cli_regions
 
 		const threshold = BigInt(Math.round(options.threshold ?? config.prune_threshold) * 20); // seconds -> ticks
 
-		const world = resolve(config.world_path);
+		const world = resolve(config.path, config.world);
 		if (!existsSync(world)) io.exit(`invalid world directory: ${world}`);
 
 		const into = typeof options.move == 'string' ? resolve(options.move) : null;

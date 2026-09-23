@@ -4,7 +4,9 @@ import { normalizeId } from './level.js';
 
 export const configManager = new ConfigManager(
 	z.object({
-		world_path: z.string().default('/srv/mc'),
+		path: z.string().default('/srv/mc'),
+		// relative to the server path
+		world: z.string().default('world'),
 		protected_regions: z
 			.record(
 				z.string().transform(dim => normalizeId(dim)),
