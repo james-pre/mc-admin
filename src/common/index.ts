@@ -1,6 +1,7 @@
 export * as chunk from './chunk.js';
 export * as log from './log.js';
 export * as nbt from './nbt.js';
+export * as ping from './ping.js';
 export * as properties from './properties.js';
 export * as rcon from './rcon.js';
 export { Region } from './region.js';

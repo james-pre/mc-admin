@@ -3,6 +3,7 @@ export { Dimension, Level } from './level.js';
 export * as level from './level.js';
 export * as log from './log.js';
 export * as nbt from './nbt.js';
+export * as ping from './ping.js';
 export * as properties from './properties.js';
 export * as prune from './prune.js';
 export * as rcon from './rcon.js';
