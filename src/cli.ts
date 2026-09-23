@@ -1,4 +1,6 @@
+import { configCommand } from '@james-pre/config/cli';
 import * as systemd from '@james-pre/systemd';
+import { serviceCommand } from '@james-pre/systemd/cli';
 import { Command, InvalidArgumentError, Option } from 'commander';
 import * as io from 'ioium/node';
 import { once } from 'node:events';
@@ -284,142 +286,55 @@ cli.command('run')
 		process.exitCode = code ?? 128 + constants.signals[signal!];
 	});
 
-const cli_service = cli
-	.command('service')
-	.description('Manage the systemd service that runs the server')
-	.addOption(new Option('--user', "use the user's service manager").conflicts('system'))
-	.addOption(new Option('--system', "use the system's service manager").conflicts('user'));
+serviceCommand(cli, {
+	service: user => new systemd.Service(config.service.name, { user: user ?? config.service.scope == 'user' }),
+	source(service) {
+		const user = !!service.options.user;
 
-function service(): systemd.Service {
-	const { user, system } = cli_service.opts();
-	const scope = user ? 'user' : system ? 'system' : config.service.scope;
-	return new systemd.Service(config.service.name, { user: scope == 'user' });
-}
+		const path = resolve(config.path);
 
-function assertCanManage(service: systemd.Service) {
-	if (!service.options.user && process.getuid?.() !== 0)
-		io.exit('Managing a system service requires root, try again with sudo or use --user.');
-}
+		const stats = statSync(path, { throwIfNoEntry: false });
+		if (!stats?.isDirectory()) io.exit(`invalid server directory: ${path}`);
 
-/** A unit that runs this CLI's `run` with the same configuration. */
-function serverUnit(user: boolean): systemd.UnitFile {
-	const path = resolve(config.path);
-
-	const stats = statSync(path, { throwIfNoEntry: false });
-	if (!stats?.isDirectory()) io.exit(`invalid server directory: ${path}`);
-
-	let account = user ? undefined : config.service.user;
-	if (!user && !account) {
-		if (stats.uid) account = stats.uid.toString();
-		else io.warn('The server directory is owned by root, so the server will run as root. Set service.user to run it as someone else.');
-	}
-
-	const argv = [process.execPath, fileURLToPath(new URL('main.js', import.meta.url))];
-	const { config: configFile } = cli.opts();
-	if (configFile) argv.push('--config', resolve(configFile));
-	argv.push('run');
-
-	return {
-		Unit: {
-			Description: 'Minecraft server',
-			Wants: 'network-online.target',
-			After: 'network-online.target',
-			RequiresMountsFor: systemd.literal(path),
-		},
-		Service: {
-			Type: 'simple',
-			User: account,
-			Group: user ? undefined : config.service.group,
-			WorkingDirectory: systemd.literal(path),
-			ExecStart: systemd.command(...argv),
-			KillMode: 'mixed',
-			SuccessExitStatus: 143,
-			Restart: 'on-failure',
-			RestartSec: 10,
-		},
-		Install: { WantedBy: user ? 'default.target' : 'multi-user.target' },
-	};
-}
-
-cli_service
-	.command('install')
-	.description('Install the service')
-	.option('-e, --enable', 'start the server on boot')
-	.option('-s, --start', 'start the server now')
-	.option('-r, --replace', 'replace the service if it is already installed')
-	.action(function (options) {
-		const svc = service();
-		assertCanManage(svc);
-
-		svc.install({ unit: serverUnit(!!svc.options.user) }, options);
-		io.log('Installed', styleText('bold', svc.unit), 'to', svc.path);
-
-		if (svc.options.user && options.enable && !systemd.isLingering())
-			io.warn(`${svc.unit} will not start until you log in. To start it on boot, run: loginctl enable-linger`);
-	});
-
-cli_service
-	.command('uninstall')
-	.description('Stop and remove the service')
-	.option('-k, --keep-running', 'leave the server running')
-	.action(function (options) {
-		const svc = service();
-		assertCanManage(svc);
-
-		if (svc.uninstall({ stop: !options.keepRunning })) io.log('Uninstalled', styleText('bold', svc.unit));
-		else io.log(svc.unit, 'is not installed');
-	});
-
-const stateColors: Partial<Record<systemd.ActiveState, 'green' | 'red'>> = { active: 'green', failed: 'red' };
-
-cli_service
-	.command('status')
-	.description('Show the state of the service')
-	.action(function () {
-		const svc = service();
-		const status = svc.status();
-
-		if (status.load == 'not-found') {
-			io.log(svc.unit, styleText('dim', 'is not installed'));
-			process.exitCode = 4;
-			return;
+		let account = user ? undefined : config.service.user;
+		if (!user && !account) {
+			if (stats.uid) account = stats.uid.toString();
+			else
+				io.warn(
+					'The server directory is owned by root, so the server will run as root. Set service.user to run it as someone else.',
+				);
 		}
 
-		const since = status.since ? styleText('dim', ` since ${status.since.toLocaleString()}`) : '';
+		const argv = [process.execPath, fileURLToPath(new URL('main.js', import.meta.url))];
+		const { config: configFile } = cli.opts();
+		if (configFile) argv.push('--config', resolve(configFile));
+		argv.push('run');
 
-		io.log(styleText('bold', svc.unit), styleText('dim', svc.options.user ? '(user)' : '(system)'));
-		io.log('   State:', styleText(stateColors[status.active] ?? 'yellow', `${status.active} (${status.sub})`) + since);
-		io.log('    Boot:', status.enabled ?? styleText('dim', 'unknown'));
-		if (status.pid) io.log('     PID:', status.pid);
-		if (status.memory !== null) io.log('  Memory:', formatBytes(status.memory));
-		if (status.result != 'success')
-			io.log('  Result:', styleText('red', status.result), styleText('dim', `(exit status ${status.exitStatus})`));
-		io.log('    Unit:', styleText('dim', status.path ?? svc.path));
+		return {
+			unit: {
+				Unit: {
+					Description: 'Minecraft server',
+					Wants: 'network-online.target',
+					After: 'network-online.target',
+					RequiresMountsFor: systemd.literal(path),
+				},
+				Service: {
+					Type: 'simple',
+					User: account,
+					Group: user ? undefined : config.service.group,
+					WorkingDirectory: systemd.literal(path),
+					ExecStart: systemd.command(...argv),
+					KillMode: 'mixed',
+					SuccessExitStatus: 143,
+					Restart: 'on-failure',
+					RestartSec: 10,
+				},
+				Install: { WantedBy: user ? 'default.target' : 'multi-user.target' },
+			},
+		};
+	},
+}).description('Manage the systemd service that runs the server');
 
-		if (status.active != 'active') process.exitCode = 3;
-	});
-
-for (const [name, description] of [
-	['start', 'Start the server'],
-	['stop', 'Stop the server'],
-	['restart', 'Restart the server'],
-] as const) {
-	cli_service
-		.command(name)
-		.description(description)
-		.action(() => service()[name]());
-}
-
-cli_service
-	.command('enable')
-	.description('Start the server on boot')
-	.option('--now', 'also start it now')
-	.action(options => service().enable(options));
-
-cli_service
-	.command('disable')
-	.description('Stop starting the server on boot')
-	.option('--now', 'also stop it now')
-	.action(options => service().disable(options));
+configCommand(cli, configManager);
 
 export default cli;
