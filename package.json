@@ -28,8 +28,7 @@
 		"./*": "./dist/*.js"
 	},
 	"files": [
-		"dist",
-		"LICENSE.md"
+		"dist"
 	],
 	"engines": {
 		"node": ">=22.0.0"
