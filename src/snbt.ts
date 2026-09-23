@@ -1,7 +1,7 @@
 export * from './common/snbt.js';
 import { styleText, type InspectColor } from 'node:util';
 import { TagType, type Tag, type TagOf } from './common/nbt.js';
-import { arrayMarkers, tagSuffixes, escapes } from './common/snbt.js';
+import { arrayMarkers, escapes, scan, tagSuffixes } from './common/snbt.js';
 
 export const colors: Record<'name' | 'string' | 'number' | 'suffix', InspectColor> = {
 	name: 'cyan',
@@ -73,4 +73,17 @@ export function format(tag: Tag): string {
 	}
 
 	return num(tag.value, tagSuffixes[tag.type as keyof typeof tagSuffixes] ?? '');
+}
+
+/** Color the SNBT embedded in prose, such as command output. */
+export function highlight(text: string): string {
+	let out = '',
+		position = 0;
+
+	for (const span of scan(text)) {
+		out += text.slice(position, span.start) + format(span.tag);
+		position = span.end;
+	}
+
+	return out + text.slice(position);
 }

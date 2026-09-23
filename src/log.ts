@@ -4,6 +4,7 @@ import { basename, dirname } from 'node:path';
 import { toLines } from './common/buffers.js';
 import { parse, type LogLevel, type LogLine } from './common/log.js';
 import { styleText, type InspectColor } from 'node:util';
+import { highlight } from './snbt.js';
 
 export * from './common/log.js';
 
@@ -149,13 +150,21 @@ const feedbackPattern = /^\[\w+:\s.*\]$/;
 // Chat, e.g. `<Notch> hi`. The trailing `>` and space keep this from matching `<--[HERE]`.
 const chatPattern = /^(<\w+>)(\s.*)$/;
 
+// Brigadier's pointer to where a command stopped parsing, `say <--[HERE]`.
+const errorPattern = /<--\[HERE\]/;
+
+/** Color command output: red when it reports a syntax error, otherwise with its SNBT highlighted. */
+export function formatOutput(text: string): string {
+	return errorPattern.test(text) ? styleText('red', text) : highlight(text);
+}
+
 function formatMessage(message: string) {
 	if (feedbackPattern.test(message)) return styleText(['italic', 'dim'], message);
 
 	const chat = chatPattern.exec(message);
 	if (chat) return styleText('bold', chat[1]) + chat[2];
 
-	return message;
+	return formatOutput(message);
 }
 
 export function format(line: string | LogLine): string {
