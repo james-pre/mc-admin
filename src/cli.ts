@@ -12,6 +12,7 @@ import { _throw, pick } from 'utilium';
 import { bytes as formatBytes } from 'utilium/format';
 import $pkg from '../package.json' with { type: 'json' };
 import { config, configManager } from './config.js';
+import { dimensionsAt, type Dimension, type RegionStats } from './level.js';
 import * as log from './log.js';
 import ping from './ping.js';
 import * as properties from './properties.js';
@@ -19,6 +20,7 @@ import * as prune from './prune.js';
 import * as rcon from './rcon.js';
 import * as server from './server.js';
 import { interact, Terminal, type Session } from './terminal.js';
+import { concurrent } from './utils.js';
 
 const cli = new Command('mc-admin')
 	.version($pkg.version)
@@ -160,6 +162,61 @@ cli_regions
 			styleText('blue', pruned.length.toString()),
 			'regions, freeing',
 			styleText('blue', formatBytes(freed)),
+		);
+	});
+
+cli_regions
+	.command('stats')
+	.alias('stat')
+	.description('Show how many regions and chunks each dimension stores, and how much space they take')
+	.option('-l, --long', 'show stats for each region file')
+	.action(async options => {
+		const world = resolve(config.path, config.world);
+		if (!existsSync(world)) io.exit(`invalid world directory: ${world}`);
+
+		const dimensions = await dimensionsAt(world);
+		if (!dimensions.length) io.exit(`no dimensions found in ${world}`);
+
+		const totals: { dimension: Dimension; regions: RegionStats[] }[] = [];
+
+		for (const dimension of dimensions) {
+			const stats = await concurrent(await dimension.regionFiles(), 8, file =>
+				dimension.regionStats(file).catch((err: Error) => {
+					io.error(styleText('dim', dimension.id), styleText('bold', file.name), io.errorText(err));
+					process.exitCode = 1;
+					return null;
+				}),
+			);
+			totals.push({ dimension, regions: stats.filter(s => s !== null) });
+		}
+
+		io.setTableTargetWidth(process.stdout.columns);
+
+		if (options.long) {
+			io.table(
+				[
+					{ name: 'Dimension', text: r => styleText('dim', r.dimension.id), grow: 0 },
+					{ name: 'Region File', text: r => r.name },
+					{ name: 'Chunks', text: r => styleText('blue', r.chunks.toString()), padStart: true },
+					{ name: 'Size', text: r => styleText('cyan', formatBytes(r.size)), padStart: true },
+				],
+				{ formatHead: t => styleText('bold', t) },
+				totals.flatMap(({ dimension, regions }) => regions.map(r => ({ ...r, dimension }))),
+			);
+			console.log();
+		}
+
+		const sum = (regions: RegionStats[], key: 'chunks' | 'size') => regions.reduce((total, r) => total + r[key], 0);
+
+		io.table(
+			[
+				{ name: 'Dimension', text: t => styleText('dim', t.dimension.id), grow: 0 },
+				{ name: 'Regions', text: t => styleText('blue', t.regions.length.toString()), padStart: true },
+				{ name: 'Chunks', text: t => styleText('blue', sum(t.regions, 'chunks').toString()), padStart: true },
+				{ name: 'Size', text: t => styleText('cyan', formatBytes(sum(t.regions, 'size'))), padStart: true },
+			],
+			{ formatHead: t => styleText('bold', t) },
+			totals,
 		);
 	});
 

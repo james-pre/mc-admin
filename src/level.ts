@@ -5,7 +5,7 @@ import type { RegionFile, RegionKind } from './common/level.js';
 import { normalizeId, regionKinds, vanillaDimensions, vanillaIds } from './common/level.js';
 import type { Named } from './nbt.js';
 import { parseCompressed } from './nbt.js';
-import { parseName, Region, regionSize } from './region.js';
+import { parseName, Region, regionSize, sectorSize } from './region.js';
 export * from './common/level.js';
 import { exists, subdirectories } from './utils.js';
 
@@ -16,7 +16,20 @@ export async function isLevel(path: string): Promise<boolean> {
 	return found.includes(true);
 }
 
+/** Every dimension at a path, which is either a level root or a single dimension's directory. */
+export async function dimensionsAt(path: string): Promise<Dimension[]> {
+	if (await isLevel(path)) return await new Level(path).dimensions();
+	return (await exists(join(path, 'region'))) ? [Dimension.at(path)] : [];
+}
+
 const localCoord = (value: number) => ((value % regionSize) + regionSize) % regionSize;
+
+export interface RegionStats extends RegionFile {
+	/** How many chunks the region stores. */
+	chunks: number;
+	/** The combined size of the region's files of every kind, in bytes. */
+	size: number;
+}
 
 /** One dimension's directory: its region files and the chunks in them. */
 export class Dimension {
@@ -49,6 +62,33 @@ export class Dimension {
 		const files = regionKinds.map(kind => this.regionFile(kind, x, z));
 		const present = await Promise.all(files.map(file => exists(file.path)));
 		return files.filter((_, i) => present[i]);
+	}
+
+	/** How many chunks a region stores and how much space its files take, reading only the header. */
+	public async regionStats(file: RegionFile): Promise<RegionStats> {
+		const header = new Uint8Array(sectorSize * 2);
+		const handle = await fs.open(file.path);
+		let bytesRead: number;
+		try {
+			({ bytesRead } = await handle.read(header, 0, header.length, 0));
+		} finally {
+			await handle.close();
+		}
+
+		const sizes = await Promise.all(
+			regionKinds.map(kind =>
+				fs.stat(this.regionFile(kind, file.x, file.z).path).then(
+					stats => stats.size,
+					() => 0,
+				),
+			),
+		);
+
+		return {
+			...file,
+			chunks: Array.from(new Region(header.subarray(0, bytesRead)).entries()).length,
+			size: sizes.reduce((sum, size) => sum + size, 0),
+		};
 	}
 
 	/** Read the region at region coordinates. */
