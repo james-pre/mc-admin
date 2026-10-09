@@ -6,8 +6,8 @@ import { normalizeId, regionKinds, vanillaDimensions, vanillaIds } from './commo
 import type { Named } from './nbt.js';
 import { parseCompressed } from './nbt.js';
 import { parseName, Region, regionSize, sectorSize } from './region.js';
-export * from './common/level.js';
 import { exists, subdirectories } from './utils.js';
+export * from './common/level.js';
 
 /** Whether a directory is a level root rather than a single dimension's directory. */
 export async function isLevel(path: string): Promise<boolean> {
@@ -67,13 +67,8 @@ export class Dimension {
 	/** How many chunks a region stores and how much space its files take, reading only the header. */
 	public async regionStats(file: RegionFile): Promise<RegionStats> {
 		const header = new Uint8Array(sectorSize * 2);
-		const handle = await fs.open(file.path);
-		let bytesRead: number;
-		try {
-			({ bytesRead } = await handle.read(header, 0, header.length, 0));
-		} finally {
-			await handle.close();
-		}
+		await using handle = await fs.open(file.path);
+		const { bytesRead } = await handle.read(header, 0, header.length, 0);
 
 		const sizes = await Promise.all(
 			regionKinds.map(kind =>
