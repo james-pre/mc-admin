@@ -1,10 +1,9 @@
 import { spawnSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import * as fs from 'node:fs/promises';
-import { join, resolve } from 'node:path';
+import { join } from 'node:path';
 import * as z from 'zod';
-import { config } from './config.js';
-import { github, requestJSON, runAs, serverDir, serviceUser } from './utils.js';
+import { binDir, github, requestJSON, runAs, serverDir, serviceUser, type GitHubRelease } from './utils.js';
 
 const ModIdentifier = z.union([
 	z.object({ ModrinthProject: z.string() }),
@@ -84,11 +83,6 @@ interface CurseForgeFile {
 interface CurseForgePage {
 	data: CurseForgeFile[];
 	pagination: { totalCount: number };
-}
-
-interface GitHubRelease {
-	tag_name: string;
-	assets: { name: string; browser_download_url: string }[];
 }
 
 const curseForgePageSize = 50;
@@ -181,10 +175,14 @@ export function version(path: string): string | null {
 	return /^ferium (\S+)/.exec(stdout)?.[1] ?? null;
 }
 
-/** Run Ferium as the service user, exiting when it is not installed. */
+/** Where Ferium is installed for the service user. */
+export function path(): string {
+	return join(binDir(), 'ferium');
+}
+
+/** Run Ferium as the service user, failing when it is not installed. */
 export function run(args: readonly string[]): Promise<number> {
-	const path = serverDir();
-	const ferium = resolve(path, config.ferium);
+	const ferium = path();
 	if (!existsSync(ferium)) throw new Error(`Ferium is not installed at ${ferium}. To install it, run: mc-admin install-ferium`);
-	return runAs(serviceUser(), ferium, args, { cwd: path });
+	return runAs(serviceUser(), ferium, args, { cwd: serverDir() });
 }

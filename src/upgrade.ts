@@ -3,6 +3,7 @@ import * as fs from 'node:fs/promises';
 import { resolve } from 'node:path';
 import * as ferium from './ferium.js';
 import * as fabric from './fabric.js';
+import * as playit from './playit.js';
 import { concurrent } from './utils.js';
 
 /** How a component's current version relates to the one it should have and the newest. */
@@ -27,11 +28,17 @@ function compare<T>(current: T | null, wanted: T | null, latest: T | null): Stat
 	return current === latest ? 'latest' : 'outdated';
 }
 
+function component(name: string, current: string | null, wanted: string | null, latest: string | null = wanted): Component {
+	return { name, current, wanted, latest, state: compare(current, wanted, latest) };
+}
+
 export interface CheckOptions {
 	/** The server directory. */
 	path: string;
 	/** The Ferium executable. */
 	ferium: string;
+	/** The Playit agent, or null when the tunnel is disabled. */
+	playit: string | null;
 	/** The home directory Ferium runs with, or null to skip mods. */
 	home: string | null;
 	/** The Minecraft version to upgrade to, or `latest`. */
@@ -42,11 +49,14 @@ export interface Plan {
 	minecraft: Component | null;
 	fabric: Component | null;
 	ferium: Component | null;
+	playit: Component | null;
 	mods: Component[];
 	profile: ferium.Profile | null;
 	/** The Minecraft version mods are checked for, which the profile needs to be set to. */
 	game: string | null;
-	release: ferium.Release;
+	feriumRelease: ferium.Release;
+	/** The Playit release to upgrade to, or null when the tunnel is disabled. */
+	playitRelease: playit.Release | null;
 }
 
 async function jarsIn(dir: string): Promise<Set<string>> {
@@ -75,12 +85,15 @@ async function checkMod(mod: ferium.Mod, profile: ferium.Profile, game: string, 
 
 /** Find what an upgrade would change, without changing anything. */
 export async function check(options: CheckOptions): Promise<Plan> {
-	const [libraries, versions, release, profile] = await Promise.all([
+	const [libraries, versions, feriumRelease, profile, playitRelease] = await Promise.all([
 		fabric.libraryVersions(options.path),
 		fabric.versions(),
 		ferium.latest(),
 		options.home ? ferium.activeProfile(options.home) : null,
+		options.playit ? playit.latest() : null,
 	]);
+
+	const playitVersion = options.playit && (await playit.installedVersion(options.playit));
 
 	const loader = versions.loader.find(v => v.stable)?.version;
 
@@ -103,10 +116,8 @@ export async function check(options: CheckOptions): Promise<Plan> {
 
 	let minecraft: Component | null = null;
 	if (fabricVersions) {
-		const wanted = target ?? fabricVersions.minecraft;
-		let state = compare(fabricVersions.minecraft, wanted, newest);
-		if (state == 'upgrade' && index(wanted) > index(fabricVersions.minecraft)) state = 'downgrade';
-		minecraft = { name: 'Minecraft', current: fabricVersions.minecraft, wanted, latest: newest, state };
+		minecraft = component('Minecraft', fabricVersions.minecraft, target ?? fabricVersions.minecraft, newest);
+		if (minecraft.state == 'upgrade' && index(minecraft.wanted!) > index(fabricVersions.minecraft)) minecraft.state = 'downgrade';
 	}
 
 	const feriumVersion = ferium.version(options.ferium);
@@ -120,25 +131,13 @@ export async function check(options: CheckOptions): Promise<Plan> {
 
 	return {
 		minecraft,
-		fabric: fabricVersions && {
-			name: 'Fabric Loader',
-			current: fabricVersions.loader,
-			wanted: loader,
-			latest: loader,
-			state: compare(fabricVersions.loader, loader, loader),
-		},
-		ferium: feriumVersion
-			? {
-					name: 'Ferium',
-					current: feriumVersion,
-					wanted: release.version,
-					latest: release.version,
-					state: compare(feriumVersion, release.version, release.version),
-				}
-			: null,
+		fabric: fabricVersions && component('Fabric Loader', fabricVersions.loader, loader),
+		ferium: feriumVersion ? component('Ferium', feriumVersion, feriumRelease.version) : null,
+		playit: playitRelease && component('Playit', playitVersion, playitRelease.version),
 		mods,
 		profile: feriumVersion ? profile : null,
 		game,
-		release,
+		feriumRelease,
+		playitRelease,
 	};
 }

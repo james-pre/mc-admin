@@ -4,9 +4,9 @@ import { serviceCommand } from '@james-pre/systemd/cli';
 import { Command, InvalidArgumentError, Option } from 'commander';
 import * as io from 'ioium/node';
 import { spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { once } from 'node:events';
 import { existsSync, statSync } from 'node:fs';
-import * as fs from 'node:fs/promises';
 import { constants, homedir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { styleText, type InspectColor } from 'node:util';
@@ -20,13 +20,14 @@ import * as ferium from './ferium.js';
 import { dimensionsAt, type Dimension, type RegionStats } from './level.js';
 import * as log from './log.js';
 import ping from './ping.js';
+import * as playit from './playit.js';
 import * as properties from './properties.js';
 import * as prune from './prune.js';
 import * as rcon from './rcon.js';
 import * as server from './server.js';
 import { interact, Terminal, type Session } from './terminal.js';
 import * as upgrade from './upgrade.js';
-import { concurrent, request, runAs, serverDir, serviceUser } from './utils.js';
+import { concurrent, replaceFile, request, runAs, serverDir, serviceUser } from './utils.js';
 
 const cli = new Command('mc-admin')
 	.version($pkg.version)
@@ -335,9 +336,21 @@ cli.command('run')
 
 		consoleServer?.on('command', command => void instance.send(command).catch(() => {}));
 
+		let agent: playit.Agent | null = null;
+		if (config.playit.enabled && !existsSync(playit.path()))
+			io.warn('Playit is enabled but not installed. To install it, run: mc-admin install-playit');
+		else if (config.playit.enabled)
+			agent = new playit.Agent()
+				.on('exit', (code, signal) => io.warn(`Playit exited with ${signal ?? `status ${code}`}, restarting it.`))
+				.on('error', error => io.warn(`Could not run Playit: ${error.message}`))
+				.start();
+
 		const stop = (signal: NodeJS.Signals) => instance.process.kill(signal);
 		for (const signal of ['SIGINT', 'SIGTERM', 'SIGHUP'] as const) process.on(signal, stop);
-		process.once('exit', () => stop('SIGTERM'));
+		process.once('exit', () => {
+			stop('SIGTERM');
+			agent?.kill();
+		});
 
 		try {
 			await interact(new Terminal({ history: historyFile }), instance, { persist: true, onInterrupt: () => stop('SIGINT') });
@@ -346,6 +359,7 @@ cli.command('run')
 		}
 
 		const { code, signal } = await instance.exited;
+		await agent?.stop();
 		process.exitCode = code ?? 128 + constants.signals[signal!];
 	});
 
@@ -355,6 +369,32 @@ function service(user?: boolean) {
 
 const unknown = styleText('dim', 'unknown');
 
+async function describeTunnel(socket: string): Promise<string> {
+	const lifecycle = await playit.state(socket).catch(() => null);
+	if (!lifecycle) return styleText('dim', 'not running');
+
+	switch (lifecycle.state) {
+		case 'running': {
+			const { tunnels, pending_tunnels } = lifecycle.data;
+			if (!tunnels.length) return styleText('yellow', pending_tunnels.length ? 'tunnels pending' : 'no tunnels');
+			return tunnels
+				.map(t =>
+					t.is_disabled
+						? styleText('red', `${t.display_address} (disabled${t.disabled_reason ? ': ' + t.disabled_reason : ''})`)
+						: `${styleText('green', t.display_address)} → ${t.destination}`,
+				)
+				.join(', ');
+		}
+		case 'waiting_for_secret':
+			return styleText('yellow', 'waiting for a secret');
+		case 'starting':
+		case 'stopping':
+			return styleText('dim', lifecycle.state);
+		default:
+			return styleText('red', lifecycle.data.message);
+	}
+}
+
 cli.command('status')
 	.description('Show the state of the server')
 	.action(async () => {
@@ -362,6 +402,8 @@ cli.command('status')
 		const props = properties.read(join(path, 'server.properties'));
 
 		console.log(styleText('whiteBright', 'Daemon:'), service().shortStatus());
+
+		if (config.playit.enabled) console.log(styleText('whiteBright', 'Tunnel:'), await describeTunnel(playit.socketPath()));
 
 		const status = await ping({
 			host: props.get('server-ip') || 'localhost',
@@ -491,7 +533,7 @@ async function installFabric(minecraft: string | null, loader?: string): Promise
 async function installFerium(release?: ferium.Release): Promise<void> {
 	if (await delegate(['install-ferium'])) return;
 
-	const dest = resolve(serverDir(), config.ferium);
+	const dest = ferium.path();
 
 	release ??= await io.track('Finding the latest Ferium', ferium.latest());
 	const archive = await io.track(
@@ -499,12 +541,35 @@ async function installFerium(release?: ferium.Release): Promise<void> {
 		request(release.url).then(r => r.bytes()),
 	);
 
-	const temp = dest + '.part';
-	await fs.writeFile(temp, await new ZipBuffer(archive).get('ferium').content());
-	await fs.chmod(temp, 0o775);
-	await fs.rename(temp, dest);
+	await replaceFile(dest, await new ZipBuffer(archive).get('ferium').content(), 0o775);
 
 	io.log(`Installed Ferium ${release.version} to ${dest}`);
+}
+
+/** Install the Playit agent as the service user unless the release is already installed, then offer to enable the tunnel. */
+async function installPlayit(release?: playit.Release): Promise<void> {
+	if (await delegate(['install-playit'])) return;
+
+	const dest = playit.path();
+
+	release ??= await io.track('Finding the latest Playit', playit.latest());
+
+	if ((await playit.installedVersion(dest)) == release.version) io.log(`Playit ${release.version} is already installed.`);
+	else {
+		const data = await io.track(
+			`Downloading Playit ${release.version}`,
+			request(release.url).then(r => r.bytes()),
+		);
+		if (release.digest && createHash('sha256').update(data).digest('hex') != release.digest)
+			io.exit(`The download of Playit ${release.version} does not match its digest.`);
+
+		await replaceFile(dest, data, 0o775);
+
+		io.log(`Installed Playit ${release.version} to ${dest}`);
+	}
+
+	if (!config.playit.enabled && (await io.confirm('Enable the tunnel, so the server runs Playit?', true)))
+		configManager.update({ playit: { enabled: true } });
 }
 
 cli.command('install-fabric')
@@ -517,8 +582,12 @@ cli.command('install-fabric')
 	});
 
 cli.command('install-ferium')
-	.description('Install or upgrade Ferium in the server directory, as the service user')
+	.description('Install or upgrade Ferium, as the service user')
 	.action(() => installFerium());
+
+cli.command('install-playit')
+	.description('Install or upgrade the Playit agent, which `run` starts alongside the server, as the service user')
+	.action(() => installPlayit());
 
 const passthrough = cli
 	.command('ferium')
@@ -550,9 +619,14 @@ const sections = [
 
 const none = styleText('dim', 'none');
 
+/** Whether upgrading changes a component. */
+function changing(component: upgrade.Component | null): boolean {
+	return sections.some(([state, , changes]) => changes && state == component?.state);
+}
+
 cli.command('upgrade')
 	.aliases(['update', 'up'])
-	.description('Upgrade Minecraft, Fabric, Ferium, and mods')
+	.description('Upgrade Minecraft, Fabric, Ferium, Playit, and mods')
 	.option('--mc <version>', 'upgrade to this Minecraft version, or "latest"')
 	.option('--check', 'only show the current, wanted, and latest versions')
 	.option('-y, --yes', 'upgrade without asking')
@@ -565,7 +639,8 @@ cli.command('upgrade')
 				'Checking for upgrades',
 				upgrade.check({
 					path,
-					ferium: resolve(path, config.ferium),
+					ferium: ferium.path(),
+					playit: config.playit.enabled ? playit.path() : null,
 					home: user ? (systemd.getUser(user)?.home ?? null) : homedir(),
 					minecraft: options.mc,
 				}),
@@ -580,7 +655,7 @@ cli.command('upgrade')
 				`Ferium's profile is for Minecraft ${plan.profile.game_version}, but the server runs ${plan.minecraft.current}. To fix this, pass --mc ${plan.minecraft.current}`,
 			);
 
-		const components = [plan.minecraft, plan.fabric, plan.ferium, ...plan.mods].filter(c => c !== null);
+		const components = [plan.minecraft, plan.fabric, plan.ferium, plan.playit, ...plan.mods].filter(c => c !== null);
 
 		for (const { name, error } of components) if (error) io.warn(`Could not check ${name}: ${error}`);
 
@@ -598,8 +673,7 @@ cli.command('upgrade')
 			return;
 		}
 
-		const changes = components.filter(c => sections.some(([state, , changes]) => changes && state == c.state));
-		if (!changes.length) {
+		if (!components.some(changing)) {
 			io.log('Nothing to do.');
 			return;
 		}
@@ -639,16 +713,18 @@ cli.command('upgrade')
 		for (const { label, rows } of entries)
 			console.log(` ${(label + ':').padEnd(width)}${rows.length} ${rows.length == 1 ? 'component' : 'components'}`);
 
-		const minecraft = plan.minecraft?.state;
-		if (minecraft == 'upgrade' || minecraft == 'downgrade')
+		if (changing(plan.minecraft))
 			io.warn(`Changing the Minecraft version converts the world, which can not be undone. You may want to create a backup.`);
 
 		if (!options.yes) await io.assertYes();
 
-		if (plan.ferium?.state == 'upgrade') await installFerium(plan.release);
+		if (changing(plan.ferium)) await installFerium(plan.feriumRelease);
 
-		const changesFabric = (c: upgrade.Component | null) => c?.state == 'upgrade' || c?.state == 'downgrade';
-		if (changesFabric(plan.minecraft) || changesFabric(plan.fabric)) await installFabric(plan.minecraft!.wanted, plan.fabric!.wanted!);
+		const playitChanged = changing(plan.playit);
+		if (playitChanged) await installPlayit(plan.playitRelease!);
+
+		const fabricChanged = changing(plan.minecraft) || changing(plan.fabric);
+		if (fabricChanged) await installFabric(plan.minecraft!.wanted, plan.fabric!.wanted!);
 
 		const gameChanged = !!plan.profile && plan.game != plan.profile.game_version;
 		if (gameChanged) {
@@ -656,12 +732,12 @@ cli.command('upgrade')
 			if (status) io.exit("Could not set the Minecraft version of Ferium's profile.", status);
 		}
 
-		const modsChanged = plan.mods.some(mod => mod.state == 'upgrade' || mod.state == 'install');
+		const modsChanged = plan.mods.some(changing);
 		if (gameChanged || modsChanged) process.exitCode = await ferium.run(['upgrade']);
 
 		const svc = service();
-		if (!(changesFabric(plan.minecraft) || changesFabric(plan.fabric) || gameChanged || modsChanged) || svc.status().active != 'active')
-			return;
+		if (!(fabricChanged || gameChanged || modsChanged || playitChanged)) return;
+		if (svc.status().active != 'active') return;
 
 		if (!options.yes && !(await io.confirm('Restart the server now?'))) {
 			io.info('Restart the server to use the upgrades.');

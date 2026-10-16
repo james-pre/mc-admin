@@ -1,7 +1,7 @@
 import * as fs from 'node:fs/promises';
 import { join } from 'node:path';
 import { ZipFile } from 'node:zlib';
-import { dataDir, exists, request, requestJSON } from './utils.js';
+import { cacheDir, exists, replaceFile, request, requestJSON } from './utils.js';
 
 export interface Version {
 	version: string;
@@ -36,14 +36,12 @@ export async function installer(): Promise<string> {
 	const latest = (await versions()).installer.find(v => v.stable);
 	if (!latest) throw new Error('there is no stable Fabric installer');
 
-	const dir = dataDir();
+	const dir = cacheDir();
 	const name = `fabric-installer-${latest.version}.jar`;
 	const path = join(dir, name);
 	if (await exists(path)) return path;
 
-	await fs.mkdir(dir, { recursive: true });
-	await fs.writeFile(path + '.part', await request(latest.url).then(r => r.bytes()));
-	await fs.rename(path + '.part', path);
+	await replaceFile(path, await request(latest.url).then(r => r.bytes()));
 
 	for (const file of await fs.readdir(dir)) {
 		if (file != name && /^fabric-installer-.+\.jar$/.test(file)) await fs.rm(join(dir, file), { force: true });

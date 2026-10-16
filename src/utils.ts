@@ -1,12 +1,14 @@
 import { getUser } from '@james-pre/systemd';
 import { spawn, type SpawnOptions } from 'node:child_process';
 import { once } from 'node:events';
-import { constants, statSync } from 'node:fs';
+import { constants, createReadStream, statSync } from 'node:fs';
 import * as fs from 'node:fs/promises';
 import { homedir, constants as os } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import $pkg from '../package.json' with { type: 'json' };
 import { config } from './config.js';
+import { createHash } from 'node:crypto';
+import { pipeline } from 'node:stream/promises';
 
 /** Fetch a URL, failing unless it responds successfully. */
 export async function request(url: string, headers: Record<string, string> = {}): Promise<Response> {
@@ -110,7 +112,33 @@ export function serviceUser() {
 	return config.service.scope == 'user' ? null : config.service.user;
 }
 
+/** Where the service user's executables are installed, in its home, which is the server directory. */
+export function binDir(): string {
+	return join(serverDir(), '.local/bin');
+}
+
 /** Where mc-admin keeps downloads to reuse. */
-export function dataDir(): string {
-	return join(process.env.XDG_DATA_HOME || join(homedir(), '.local/share'), 'mc-admin');
+export function cacheDir(): string {
+	return join(process.env.XDG_CACHE_HOME || join(homedir(), '.cache'), 'mc-admin');
+}
+
+export interface GitHubRelease {
+	tag_name: string;
+	prerelease: boolean;
+	assets: { name: string; browser_download_url: string; digest?: string | null }[];
+}
+
+/** Replace a file by renaming a complete copy over it, so a running executable is never written to. */
+export async function replaceFile(path: string, data: Uint8Array, mode?: number): Promise<void> {
+	await fs.mkdir(dirname(path), { recursive: true });
+	const temp = path + '.part';
+	await fs.writeFile(temp, data);
+	if (mode !== undefined) await fs.chmod(temp, mode);
+	await fs.rename(temp, path);
+}
+
+export async function digest(path: string): Promise<string> {
+	const hash = createHash('sha256');
+	await pipeline(createReadStream(path), hash);
+	return hash.digest('hex');
 }

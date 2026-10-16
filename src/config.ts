@@ -50,8 +50,16 @@ export const configManager = new ConfigManager(
 				max_metaspace: size.optional(),
 			})
 			.prefault({}),
-		/** The Ferium executable, relative to the server path. */
-		ferium: z.string().default('ferium'),
+		playit: z
+			.object({
+				/** Whether `run` starts the tunnel's agent alongside the server. */
+				enabled: z.boolean().default(false),
+				/** The socket the tunnel's agent accepts connections on, relative to the server path. */
+				socket: z.string().default('playit.sock'),
+				/** The agent's log, relative to the server path. */
+				log: z.string().default('logs/playit.log'),
+			})
+			.prefault({}),
 		/** The socket a running server accepts console connections on, relative to the server path. */
 		socket: z.string().default('console.sock'),
 		service: z
