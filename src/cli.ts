@@ -479,8 +479,12 @@ async function installFabric(minecraft: string | null, loader?: string): Promise
 	if (error) io.exit(error);
 	if (status) io.exit('The Fabric installer failed.', status);
 
-	if (config.jar != fabric.launcher)
-		io.warn(`The server runs ${config.jar} rather than Fabric. To fix this, run: mc-admin config set jar ${fabric.launcher}`);
+	if (config.jar == fabric.launcher) return;
+
+	io.warn('The server is configured to run', config.jar, 'instead of Fabric.');
+	if (await io.confirm('Do you want to update the configuration?', true)) {
+		configManager.update({ jar: fabric.launcher });
+	}
 }
 
 /** Install Ferium as the service user, exiting when it can't be. */
