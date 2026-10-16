@@ -52,11 +52,11 @@ export async function installer(): Promise<string> {
 	return path;
 }
 
-export const launcher = 'fabric-server-launch.jar';
+export const launcherPath = 'fabric-server-launch.jar';
 
 /** The versions of the libraries the Fabric launcher in a server directory runs, by artifact, or null without one. */
 export async function libraryVersions(dir: string): Promise<Record<string, string> | null> {
-	await using jar = await ZipFile.open(join(dir, launcher)).catch((error: NodeJS.ErrnoException) => {
+	await using jar = await ZipFile.open(join(dir, launcherPath)).catch((error: NodeJS.ErrnoException) => {
 		if (error.code == 'ENOENT') return null;
 		throw error;
 	});

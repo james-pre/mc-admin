@@ -479,11 +479,11 @@ async function installFabric(minecraft: string | null, loader?: string): Promise
 	if (error) io.exit(error);
 	if (status) io.exit('The Fabric installer failed.', status);
 
-	if (config.jar == fabric.launcher) return;
+	if (config.jar == fabric.launcherPath) return;
 
 	io.warn('The server is configured to run', config.jar, 'instead of Fabric.');
 	if (await io.confirm('Do you want to update the configuration?', true)) {
-		configManager.update({ jar: fabric.launcher });
+		configManager.update({ jar: fabric.launcherPath });
 	}
 }
 

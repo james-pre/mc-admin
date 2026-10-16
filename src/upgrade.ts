@@ -90,7 +90,7 @@ export async function check(options: CheckOptions): Promise<Plan> {
 	if (libraries) {
 		const { intermediary: minecraft, 'fabric-loader': installedLoader } = libraries;
 		if (!minecraft || !installedLoader)
-			throw new Error(`could not find the Minecraft and Fabric loader versions in ${fabric.launcher}`);
+			throw new Error(`could not find the Minecraft and Fabric loader versions in ${fabric.launcherPath}`);
 		fabricVersions = { minecraft, loader: installedLoader };
 	}
 
