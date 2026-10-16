@@ -1,10 +1,32 @@
 import { getUser } from '@james-pre/systemd';
 import { spawn, type SpawnOptions } from 'node:child_process';
 import { once } from 'node:events';
-import { constants } from 'node:fs';
+import { constants, statSync } from 'node:fs';
 import * as fs from 'node:fs/promises';
-import { constants as os } from 'node:os';
-import { dirname } from 'node:path';
+import { homedir, constants as os } from 'node:os';
+import { dirname, join, resolve } from 'node:path';
+import $pkg from '../package.json' with { type: 'json' };
+import { config } from './config.js';
+
+/** Fetch a URL, failing unless it responds successfully. */
+export async function request(url: string, headers: Record<string, string> = {}): Promise<Response> {
+	const response = await fetch(url, { headers: { 'User-Agent': `mc-admin/${$pkg.version}`, ...headers } });
+	if (!response.ok) throw new Error(`could not fetch ${url}: ${response.status} ${response.statusText}`);
+	return response;
+}
+
+export async function requestJSON<T>(url: string, headers?: Record<string, string>): Promise<T> {
+	return (await request(url, headers)).json() as Promise<T>;
+}
+
+/** Fetch from GitHub's API, authenticating with `GITHUB_TOKEN` when it is set. */
+export function github<T>(path: string): Promise<T> {
+	const token = process.env.GITHUB_TOKEN;
+	return requestJSON<T>('https://api.github.com' + path, {
+		Accept: 'application/vnd.github+json',
+		...(token && { Authorization: `Bearer ${token}` }),
+	});
+}
 
 /**
  * Run a program to completion as a user, through sudo unless this process already is them, or as this process's user when null.
@@ -76,4 +98,19 @@ export async function subdirectories(path: string): Promise<string[]> {
 		.filter(entry => entry.isDirectory())
 		.map(entry => entry.name)
 		.sort();
+}
+
+export function serverDir(): string {
+	const path = resolve(config.path);
+	if (!statSync(path, { throwIfNoEntry: false })?.isDirectory()) throw new Error(`invalid server directory: ${path}`);
+	return path;
+}
+
+export function serviceUser() {
+	return config.service.scope == 'user' ? null : config.service.user;
+}
+
+/** Where mc-admin keeps downloads to reuse. */
+export function dataDir(): string {
+	return join(process.env.XDG_DATA_HOME || join(homedir(), '.local/share'), 'mc-admin');
 }

@@ -3,17 +3,20 @@ import * as systemd from '@james-pre/systemd';
 import { serviceCommand } from '@james-pre/systemd/cli';
 import { Command, InvalidArgumentError, Option } from 'commander';
 import * as io from 'ioium/node';
+import { spawnSync } from 'node:child_process';
 import { once } from 'node:events';
 import { existsSync, statSync } from 'node:fs';
 import * as fs from 'node:fs/promises';
-import { constants, homedir, tmpdir } from 'node:os';
+import { constants, homedir } from 'node:os';
 import { join, resolve } from 'node:path';
-import { styleText } from 'node:util';
+import { styleText, type InspectColor } from 'node:util';
+import { ZipBuffer } from 'node:zlib';
 import { _throw, pick } from 'utilium';
 import { bytes as formatBytes } from 'utilium/format';
 import $pkg from '../package.json' with { type: 'json' };
 import { config, configManager } from './config.js';
-import * as install from './install.js';
+import * as fabric from './fabric.js';
+import * as ferium from './ferium.js';
 import { dimensionsAt, type Dimension, type RegionStats } from './level.js';
 import * as log from './log.js';
 import ping from './ping.js';
@@ -22,7 +25,8 @@ import * as prune from './prune.js';
 import * as rcon from './rcon.js';
 import * as server from './server.js';
 import { interact, Terminal, type Session } from './terminal.js';
-import { concurrent, runAs } from './utils.js';
+import * as upgrade from './upgrade.js';
+import { concurrent, request, runAs, serverDir, serviceUser } from './utils.js';
 
 const cli = new Command('mc-admin')
 	.version($pkg.version)
@@ -431,55 +435,86 @@ serviceCommand(cli, {
 	},
 }).description('Manage the systemd service that runs the server');
 
-const serviceUser = () => (config.service.scope == 'user' ? null : config.service.user);
+/**
+ * Run an mc-admin command as the service user unless this process already is them, exiting when it fails.
+ * @returns whether the command was run
+ */
+async function delegate(args: string[]): Promise<boolean> {
+	const user = serviceUser();
+	if (!user) return false;
 
-/** A temporary directory the service user can read. */
-async function sharedTempDir() {
-	const dir = await fs.mkdtempDisposable(join(tmpdir(), 'mc-admin-'));
-	await fs.chmod(dir.path, 0o755);
-	return dir;
+	const account = systemd.getUser(user);
+	if (!account) io.exit(`the user ${user} does not exist`);
+	if (account.uid == process.getuid?.()) return false;
+
+	const { config: file } = cli.opts();
+	const argv = [...process.execArgv, join(import.meta.dirname, 'main.js'), ...(file ? ['--config', resolve(file)] : []), ...args];
+	const status = await runAs(user, process.execPath, argv);
+	if (status) process.exit(status);
+	return true;
+}
+
+/** Install Fabric as the service user, exiting when the installer fails. */
+async function installFabric(minecraft: string | null, loader?: string): Promise<void> {
+	if (await delegate(['install-fabric', minecraft ?? 'latest', ...(loader ? ['--loader', loader] : [])])) return;
+
+	const path = serverDir();
+
+	const jar = await io.track('Getting the Fabric installer', fabric.installer());
+
+	const { status, error } = spawnSync(
+		config.java,
+		[
+			'-jar',
+			jar,
+			'server',
+			'-dir',
+			path,
+			'-downloadMinecraft',
+			...(minecraft ? ['-mcversion', minecraft] : []),
+			...(loader ? ['-loader', loader] : []),
+		],
+		{ cwd: path, stdio: 'inherit' },
+	);
+	if (error) io.exit(error);
+	if (status) io.exit('The Fabric installer failed.', status);
+
+	if (config.jar != fabric.launcher)
+		io.warn(`The server runs ${config.jar} rather than Fabric. To fix this, run: mc-admin config set jar ${fabric.launcher}`);
+}
+
+/** Install Ferium as the service user, exiting when it can't be. */
+async function installFerium(release?: ferium.Release): Promise<void> {
+	if (await delegate(['install-ferium'])) return;
+
+	const dest = resolve(serverDir(), config.ferium);
+
+	release ??= await io.track('Finding the latest Ferium', ferium.latest());
+	const archive = await io.track(
+		`Downloading Ferium ${release.version}`,
+		request(release.url).then(r => r.bytes()),
+	);
+
+	const temp = dest + '.part';
+	await fs.writeFile(temp, await new ZipBuffer(archive).get('ferium').content());
+	await fs.chmod(temp, 0o775);
+	await fs.rename(temp, dest);
+
+	io.log(`Installed Ferium ${release.version} to ${dest}`);
 }
 
 cli.command('install-fabric')
 	.description('Install or upgrade the Fabric server, as the service user')
 	.argument('<version>', 'Minecraft version, or "latest" for the latest release')
-	.action(async version => {
-		const path = resolve(config.path);
-		if (!statSync(path, { throwIfNoEntry: false })?.isDirectory()) io.exit(`invalid server directory: ${path}`);
-
-		const installer = await io.track('Downloading the Fabric installer', install.fabricInstaller());
-
-		await using dir = await sharedTempDir();
-		const jar = join(dir.path, `fabric-installer-${installer.version}.jar`);
-		await fs.writeFile(jar, installer.data, { mode: 0o644 });
-
-		const args = ['-jar', jar, ...install.fabricInstallerArgs(path, version == 'latest' ? null : version)];
-		const status = await runAs(serviceUser(), config.java, args, { cwd: path });
-		if (status) io.exit('The Fabric installer failed.', status);
-
-		if (config.jar != 'fabric-server-launch.jar')
-			io.warn(`The server runs ${config.jar} rather than Fabric. To fix this, run: mc-admin config set jar fabric-server-launch.jar`);
-		if (service().status().active == 'active') io.info('Restart the server to run the new version.');
+	.option('--loader <version>', 'Fabric loader version (default: the latest stable)')
+	.action(async (version, options) => {
+		if (service().status().active == 'active') io.exit('The server is running. To stop it, run: mc-admin service stop');
+		await installFabric(version == 'latest' ? null : version, options.loader);
 	});
 
 cli.command('install-ferium')
 	.description('Install or upgrade Ferium in the server directory, as the service user')
-	.action(async () => {
-		const path = resolve(config.path);
-		if (!statSync(path, { throwIfNoEntry: false })?.isDirectory()) io.exit(`invalid server directory: ${path}`);
-
-		const ferium = await io.track('Downloading Ferium', install.ferium());
-
-		await using dir = await sharedTempDir();
-		const temp = join(dir.path, 'ferium');
-		await fs.writeFile(temp, ferium.data, { mode: 0o755 });
-
-		const dest = resolve(path, config.ferium);
-		const status = await runAs(serviceUser(), 'install', ['-m', '755', temp, dest], { cwd: path });
-		if (status) io.exit(`Could not install Ferium to ${dest}.`, status);
-
-		io.log(`Installed Ferium ${ferium.version} to ${dest}`);
-	});
+	.action(() => installFerium());
 
 const passthrough = cli
 	.command('ferium')
@@ -488,10 +523,153 @@ const passthrough = cli
 	.argument('[args...]', 'arguments for Ferium')
 	.helpOption(false)
 	.action(async args => {
-		const path = resolve(config.path);
-		const ferium = resolve(path, config.ferium);
-		if (!existsSync(ferium)) io.exit(`Ferium is not installed at ${ferium}. To install it, run: mc-admin install-ferium`);
-		process.exitCode = await runAs(serviceUser(), ferium, args, { cwd: path });
+		process.exitCode = await ferium.run(args);
+	});
+
+const stateColors = {
+	upgrade: 'red',
+	downgrade: 'red',
+	install: 'red',
+	unavailable: 'yellow',
+	outdated: 'yellow',
+	latest: 'green',
+	unknown: 'dim',
+} as const satisfies Record<upgrade.State, InspectColor>;
+
+/** The sections of an upgrade's transaction, in order, with whether they change anything. */
+const sections = [
+	['upgrade', 'Upgrading', true],
+	['downgrade', 'Downgrading', true],
+	['install', 'Installing', true],
+	['unavailable', 'Skipping', false],
+] as const satisfies [upgrade.State, string, boolean][];
+
+const none = styleText('dim', 'none');
+
+cli.command('upgrade')
+	.aliases(['update', 'up'])
+	.description('Upgrade Minecraft, Fabric, Ferium, and mods')
+	.option('--mc <version>', 'upgrade to this Minecraft version, or "latest"')
+	.option('--check', 'only show the current, wanted, and latest versions')
+	.option('-y, --yes', 'upgrade without asking')
+	.action(async options => {
+		const path = serverDir();
+		const user = serviceUser();
+
+		const plan = await io
+			.track(
+				'Checking for upgrades',
+				upgrade.check({
+					path,
+					ferium: resolve(path, config.ferium),
+					home: user ? (systemd.getUser(user)?.home ?? null) : homedir(),
+					minecraft: options.mc,
+				}),
+			)
+			.catch(io.exit);
+
+		if (!plan.minecraft) io.info('Fabric is not installed. To install it, run: mc-admin install-fabric <version>');
+		if (!plan.ferium) io.info('Ferium is not installed. To install it, run: mc-admin install-ferium');
+		else if (!plan.profile) io.info('Ferium has no profile, so there are no mods to upgrade.');
+		else if (!options.mc && plan.minecraft && plan.profile.game_version != plan.minecraft.current)
+			io.warn(
+				`Ferium's profile is for Minecraft ${plan.profile.game_version}, but the server runs ${plan.minecraft.current}. To fix this, pass --mc ${plan.minecraft.current}`,
+			);
+
+		const components = [plan.minecraft, plan.fabric, plan.ferium, ...plan.mods].filter(c => c !== null);
+
+		for (const { name, error } of components) if (error) io.warn(`Could not check ${name}: ${error}`);
+
+		if (options.check) {
+			io.table(
+				[
+					{ name: 'Name', text: c => c.name },
+					{ name: 'Current', text: c => styleText(stateColors[c.state], c.current ?? (c.error ? 'unknown' : 'missing')) },
+					{ name: 'Wanted', text: c => (c.error ? unknown : c.wanted ? styleText('green', c.wanted) : none) },
+					{ name: 'Latest', text: c => (c.error ? unknown : c.latest ? styleText('magenta', c.latest) : none) },
+				],
+				{ formatHead: t => styleText('bold', t) },
+				components,
+			);
+			return;
+		}
+
+		const changes = components.filter(c => sections.some(([state, , changes]) => changes && state == c.state));
+		if (!changes.length) {
+			io.log('Nothing to do.');
+			return;
+		}
+
+		type Row = [name: string, current: string, next: string];
+
+		const entries = sections
+			.map(([state, label]) => ({
+				label,
+				rows: components
+					.filter(c => c.state == state)
+					.map((c): Row => [
+						' ' + c.name,
+						c.current ?? '',
+						c.wanted
+							? styleText(state == 'downgrade' ? 'red' : 'green', c.wanted)
+							: styleText('yellow', `none for ${plan.game}`),
+					]),
+			}))
+			.filter(entry => entry.rows.length);
+
+		const header = ['Component', 'Current', 'New'].map(text => styleText('bold', text)) as Row;
+		const print = io.table<Row>(
+			[0, 1, 2].map(i => ({ text: row => row[i] })),
+			{ noOutput: true },
+			[header, ...entries.flatMap(entry => entry.rows)],
+		);
+
+		print(header);
+		for (const { label, rows } of entries) {
+			console.log(label + ':');
+			rows.forEach(print);
+		}
+
+		console.log(styleText('bold', '\nSummary:'));
+		const width = Math.max(...entries.map(entry => entry.label.length)) + 2;
+		for (const { label, rows } of entries)
+			console.log(` ${(label + ':').padEnd(width)}${rows.length} ${rows.length == 1 ? 'component' : 'components'}`);
+
+		const minecraft = plan.minecraft?.state;
+		if (minecraft == 'upgrade' || minecraft == 'downgrade')
+			io.warn(`Changing the Minecraft version converts the world, which can not be undone. You may want to create a backup.`);
+
+		if (!options.yes) await io.assertYes();
+
+		if (plan.ferium?.state == 'upgrade') await installFerium(plan.release);
+
+		const changesFabric = (c: upgrade.Component | null) => c?.state == 'upgrade' || c?.state == 'downgrade';
+		if (changesFabric(plan.minecraft) || changesFabric(plan.fabric)) await installFabric(plan.minecraft!.wanted, plan.fabric!.wanted!);
+
+		const gameChanged = !!plan.profile && plan.game != plan.profile.game_version;
+		if (gameChanged) {
+			const status = await ferium.run(['profile', 'configure', '--game-version', plan.game!]);
+			if (status) io.exit("Could not set the Minecraft version of Ferium's profile.", status);
+		}
+
+		const modsChanged = plan.mods.some(mod => mod.state == 'upgrade' || mod.state == 'install');
+		if (gameChanged || modsChanged) process.exitCode = await ferium.run(['upgrade']);
+
+		const svc = service();
+		if (!(changesFabric(plan.minecraft) || changesFabric(plan.fabric) || gameChanged || modsChanged) || svc.status().active != 'active')
+			return;
+
+		if (!options.yes && !(await io.confirm('Restart the server now?'))) {
+			io.info('Restart the server to use the upgrades.');
+			return;
+		}
+
+		try {
+			svc.restart();
+		} catch (error) {
+			io.exit(error);
+		}
+		io.log('Restarted the server.');
 	});
 
 const parseOptions = cli.parseOptions.bind(cli);

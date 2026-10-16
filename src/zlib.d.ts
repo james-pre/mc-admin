@@ -27,4 +27,16 @@ declare module 'node:zlib' {
 		entries(): IterableIterator<[string, ZipEntry]>;
 		[Symbol.iterator](): IterableIterator<[string, ZipEntry]>;
 	}
+
+	/** A view over a ZIP archive on disk, which reads entries lazily. */
+	export class ZipFile implements AsyncDisposable {
+		static open(filename: string, options?: { writable?: boolean }): Promise<ZipFile>;
+		readonly size: number;
+		/** @throws when there is no such entry */
+		get(name: string): Promise<ZipEntry>;
+		has(name: string): boolean;
+		keys(): IterableIterator<string>;
+		close(): Promise<void>;
+		[Symbol.asyncDispose](): Promise<void>;
+	}
 }
