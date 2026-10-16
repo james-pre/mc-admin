@@ -1,6 +1,26 @@
+import { getUser } from '@james-pre/systemd';
+import { spawn, type SpawnOptions } from 'node:child_process';
+import { once } from 'node:events';
 import { constants } from 'node:fs';
 import * as fs from 'node:fs/promises';
+import { constants as os } from 'node:os';
 import { dirname } from 'node:path';
+
+/**
+ * Run a program to completion as a user, through sudo unless this process already is them, or as this process's user when null.
+ * @returns the exit status, or 128 plus the number of the signal that killed it
+ */
+export async function runAs(user: string | null, file: string, args: readonly string[], options: SpawnOptions = {}): Promise<number> {
+	if (user) {
+		const account = getUser(user);
+		if (!account) throw new Error(`the user ${user} does not exist`);
+		if (account.uid != process.getuid?.()) [file, args] = ['sudo', ['-u', user, '-H', '--', file, ...args]];
+	}
+
+	const child = spawn(file, args, { stdio: 'inherit', ...options });
+	const [code, signal] = (await once(child, 'exit')) as [number | null, NodeJS.Signals | null];
+	return code ?? 128 + os.signals[signal!];
+}
 
 /** Run `task` over `items`, keeping at most `limit` of them in flight. */
 export async function concurrent<T, U>(items: readonly T[], limit: number, task: (item: T, index: number) => Promise<U>): Promise<U[]> {

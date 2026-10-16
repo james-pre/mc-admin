@@ -50,6 +50,8 @@ export const configManager = new ConfigManager(
 				max_metaspace: size.optional(),
 			})
 			.prefault({}),
+		/** The Ferium executable, relative to the server path. */
+		ferium: z.string().default('ferium'),
 		/** The socket a running server accepts console connections on, relative to the server path. */
 		socket: z.string().default('console.sock'),
 		service: z

@@ -5,13 +5,15 @@ import { Command, InvalidArgumentError, Option } from 'commander';
 import * as io from 'ioium/node';
 import { once } from 'node:events';
 import { existsSync, statSync } from 'node:fs';
-import { constants, homedir } from 'node:os';
+import * as fs from 'node:fs/promises';
+import { constants, homedir, tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { styleText } from 'node:util';
 import { _throw, pick } from 'utilium';
 import { bytes as formatBytes } from 'utilium/format';
 import $pkg from '../package.json' with { type: 'json' };
 import { config, configManager } from './config.js';
+import * as install from './install.js';
 import { dimensionsAt, type Dimension, type RegionStats } from './level.js';
 import * as log from './log.js';
 import ping from './ping.js';
@@ -20,7 +22,7 @@ import * as prune from './prune.js';
 import * as rcon from './rcon.js';
 import * as server from './server.js';
 import { interact, Terminal, type Session } from './terminal.js';
-import { concurrent } from './utils.js';
+import { concurrent, runAs } from './utils.js';
 
 const cli = new Command('mc-admin')
 	.version($pkg.version)
@@ -428,6 +430,83 @@ serviceCommand(cli, {
 		};
 	},
 }).description('Manage the systemd service that runs the server');
+
+const serviceUser = () => (config.service.scope == 'user' ? null : config.service.user);
+
+/** A temporary directory the service user can read. */
+async function sharedTempDir() {
+	const dir = await fs.mkdtempDisposable(join(tmpdir(), 'mc-admin-'));
+	await fs.chmod(dir.path, 0o755);
+	return dir;
+}
+
+cli.command('install-fabric')
+	.description('Install or upgrade the Fabric server, as the service user')
+	.argument('<version>', 'Minecraft version, or "latest" for the latest release')
+	.action(async version => {
+		const path = resolve(config.path);
+		if (!statSync(path, { throwIfNoEntry: false })?.isDirectory()) io.exit(`invalid server directory: ${path}`);
+
+		const installer = await io.track('Downloading the Fabric installer', install.fabricInstaller());
+
+		await using dir = await sharedTempDir();
+		const jar = join(dir.path, `fabric-installer-${installer.version}.jar`);
+		await fs.writeFile(jar, installer.data, { mode: 0o644 });
+
+		const args = ['-jar', jar, ...install.fabricInstallerArgs(path, version == 'latest' ? null : version)];
+		const status = await runAs(serviceUser(), config.java, args, { cwd: path });
+		if (status) io.exit('The Fabric installer failed.', status);
+
+		if (config.jar != 'fabric-server-launch.jar')
+			io.warn(`The server runs ${config.jar} rather than Fabric. To fix this, run: mc-admin config set jar fabric-server-launch.jar`);
+		if (service().status().active == 'active') io.info('Restart the server to run the new version.');
+	});
+
+cli.command('install-ferium')
+	.description('Install or upgrade Ferium in the server directory, as the service user')
+	.action(async () => {
+		const path = resolve(config.path);
+		if (!statSync(path, { throwIfNoEntry: false })?.isDirectory()) io.exit(`invalid server directory: ${path}`);
+
+		const ferium = await io.track('Downloading Ferium', install.ferium());
+
+		await using dir = await sharedTempDir();
+		const temp = join(dir.path, 'ferium');
+		await fs.writeFile(temp, ferium.data, { mode: 0o755 });
+
+		const dest = resolve(path, config.ferium);
+		const status = await runAs(serviceUser(), 'install', ['-m', '755', temp, dest], { cwd: path });
+		if (status) io.exit(`Could not install Ferium to ${dest}.`, status);
+
+		io.log(`Installed Ferium ${ferium.version} to ${dest}`);
+	});
+
+const passthrough = cli
+	.command('ferium')
+	.alias('mods')
+	.description('Run Ferium as the service user')
+	.argument('[args...]', 'arguments for Ferium')
+	.helpOption(false)
+	.action(async args => {
+		const path = resolve(config.path);
+		const ferium = resolve(path, config.ferium);
+		if (!existsSync(ferium)) io.exit(`Ferium is not installed at ${ferium}. To install it, run: mc-admin install-ferium`);
+		process.exitCode = await runAs(serviceUser(), ferium, args, { cwd: path });
+	});
+
+const parseOptions = cli.parseOptions.bind(cli);
+
+/** Leave everything after a passthrough command to it, rather than parsing global options out of it. */
+cli.parseOptions = args => {
+	const index = args.findIndex(arg => arg == passthrough.name() || passthrough.aliases().includes(arg));
+	if (index == -1) return parseOptions(args);
+	const head = parseOptions(args.slice(0, index + 1));
+	return head.operands.length == 1 && !head.unknown.length
+		? { operands: head.operands, unknown: args.slice(index + 1) }
+		: parseOptions(args);
+};
+
+passthrough.parseOptions = args => ({ operands: args, unknown: [] });
 
 configCommand(cli, configManager);
 
