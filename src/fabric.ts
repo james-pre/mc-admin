@@ -2,6 +2,7 @@ import * as fs from 'node:fs/promises';
 import { join } from 'node:path';
 import { ZipFile } from 'node:zlib';
 import { cacheDir, exists, replaceFile, request, requestJSON } from './utils.js';
+import { config } from './config.js';
 
 export interface Version {
 	version: string;
@@ -53,7 +54,7 @@ export async function installer(): Promise<string> {
 export const launcherPath = 'fabric-server-launch.jar';
 
 /** The versions of the libraries the Fabric launcher in a server directory runs, by artifact, or null without one. */
-export async function libraryVersions(dir: string): Promise<Record<string, string> | null> {
+export async function libraryVersions(dir: string = config.path): Promise<Record<string, string> | null> {
 	await using jar = await ZipFile.open(join(dir, launcherPath)).catch((error: NodeJS.ErrnoException) => {
 		if (error.code == 'ENOENT') return null;
 		throw error;

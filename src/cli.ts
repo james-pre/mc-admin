@@ -419,12 +419,13 @@ cli.command('status')
 		}
 		console.log(styleText('whiteBright', 'Players:'), players);
 
-		const startup = log.readStartupInfo(join(path, 'logs/latest.log'));
+		const versions = (await fabric.libraryVersions()) ?? {};
 
-		console.log(styleText('whiteBright', 'Minecraft:'), startup.minecraft ?? status?.version.name ?? unknown);
-		console.log(styleText('whiteBright', 'Fabric:'), startup.fabric ?? unknown);
+		console.log(styleText('whiteBright', 'Minecraft:'), versions.intermediary);
+		console.log(styleText('whiteBright', 'Fabric:'), versions['fabric-loader']);
 		console.log(styleText('whiteBright', 'Java:'), server.javaVersion(config.java) ?? styleText('red', `${config.java} not found`));
 
+		const startup = log.readStartupInfo(join(path, 'logs/latest.log'));
 		const mods = startup.mods ? `${startup.mods.length} ${styleText('dim', `(${startup.totalMods} total)`)}` : unknown;
 		console.log(styleText('whiteBright', 'Mods:'), mods);
 	});
