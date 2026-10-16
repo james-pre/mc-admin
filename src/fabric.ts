@@ -3,21 +3,37 @@ import { join } from 'node:path';
 import { ZipFile } from 'node:zlib';
 import { dataDir, exists, request, requestJSON } from './utils.js';
 
-const metaUrl = 'https://meta.fabricmc.net/v2/versions';
-
 export interface Version {
 	version: string;
 	stable: boolean;
+	/** Present except for game versions (unused) */
+	maven?: string;
+	/** Present for mappings versions (unused) */
+	gameVersion?: string;
+	/** Present for mappings and loader versions (unused) */
+	separator?: string;
+	/** Present for mappings and loader versions (unused) */
+	build?: number;
 }
 
-interface InstallerVersion extends Version {
-	url: string;
+export interface Versions {
+	game: Version[];
+	mappings: Version[];
+	intermediary: Version[];
+	loader: Version[];
+	installer: (Version & { url: string })[];
+}
+
+let _versions: Promise<Versions>;
+
+export function versions(): Promise<Versions> {
+	_versions ||= requestJSON<Versions>('https://meta.fabricmc.net/v2/versions');
+	return _versions;
 }
 
 /** The path to the newest stable Fabric installer jar, which is downloaded unless it is already cached, replacing older ones. */
 export async function installer(): Promise<string> {
-	const versions = await requestJSON<InstallerVersion[]>(`${metaUrl}/installer`);
-	const latest = versions.find(v => v.stable);
+	const latest = (await versions()).installer.find(v => v.stable);
 	if (!latest) throw new Error('there is no stable Fabric installer');
 
 	const dir = dataDir();
@@ -34,17 +50,6 @@ export async function installer(): Promise<string> {
 	}
 
 	return path;
-}
-
-/** Every Minecraft version Fabric supports, newest first. */
-export function minecraftVersions(): Promise<Version[]> {
-	return requestJSON<Version[]>(`${metaUrl}/game`);
-}
-
-export async function latestLoader(): Promise<string> {
-	const loader = (await requestJSON<Version[]>(`${metaUrl}/loader`)).find(v => v.stable);
-	if (!loader) throw new Error('there is no stable Fabric loader');
-	return loader.version;
 }
 
 export const launcher = 'fabric-server-launch.jar';

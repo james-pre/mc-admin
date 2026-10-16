@@ -75,13 +75,16 @@ async function checkMod(mod: ferium.Mod, profile: ferium.Profile, game: string, 
 
 /** Find what an upgrade would change, without changing anything. */
 export async function check(options: CheckOptions): Promise<Plan> {
-	const [libraries, versions, loader, release, profile] = await Promise.all([
+	const [libraries, versions, release, profile] = await Promise.all([
 		fabric.libraryVersions(options.path),
-		fabric.minecraftVersions(),
-		fabric.latestLoader(),
+		fabric.versions(),
 		ferium.latest(),
 		options.home ? ferium.activeProfile(options.home) : null,
 	]);
+
+	const loader = versions.loader.find(v => v.stable)?.version;
+
+	if (!loader) throw new Error('there is no stable Fabric loader');
 
 	let fabricVersions: { minecraft: string; loader: string } | null = null;
 	if (libraries) {
@@ -91,8 +94,8 @@ export async function check(options: CheckOptions): Promise<Plan> {
 		fabricVersions = { minecraft, loader: installedLoader };
 	}
 
-	const index = (version: string) => versions.findIndex(v => v.version == version);
-	const newest = versions.find(v => v.stable)!.version;
+	const index = (version: string) => versions.game.findIndex(v => v.version == version);
+	const newest = versions.game.find(v => v.stable)!.version;
 
 	const target = options.minecraft == 'latest' ? newest : options.minecraft;
 	if (target && index(target) == -1) throw new Error(`Fabric does not support Minecraft ${target}`);
