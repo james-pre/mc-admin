@@ -381,7 +381,7 @@ async function describeTunnel(socket: string): Promise<string> {
 				.map(t =>
 					t.is_disabled
 						? styleText('red', `${t.display_address} (disabled${t.disabled_reason ? ': ' + t.disabled_reason : ''})`)
-						: `${styleText('green', t.display_address)} → ${t.destination}`,
+						: `${styleText('cyan', t.display_address)} → ${t.destination}`,
 				)
 				.join(', ');
 		}
@@ -415,7 +415,7 @@ cli.command('status')
 			const { online, max, sample = [] } = status.players;
 			const names = sample.map(player => player.name);
 			if (online > names.length && names.length) names.push(styleText('dim', `and ${online - names.length} more`));
-			players = [`${online}/${max}`, names.join(', ')].filter(v => v).join(' ');
+			players = [styleText('blue', `${online}/${max}`), names.join(', ')].filter(v => v).join(' ');
 		}
 		console.log(styleText('whiteBright', 'Players:'), players);
 
