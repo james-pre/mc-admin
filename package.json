@@ -1,6 +1,6 @@
 {
 	"name": "@james-pre/mc-admin",
-	"version": "0.6.1",
+	"version": "0.6.2",
 	"description": "Minecraft server administration CLI.",
 	"homepage": "https://github.com/james-pre/mc-admin#readme",
 	"bugs": {
