@@ -632,6 +632,7 @@ cli.command('upgrade')
 	.aliases(['update', 'up'])
 	.description('Upgrade Minecraft, Fabric, Ferium, Playit, and mods')
 	.option('--mc <version>', 'upgrade to this Minecraft version, or "latest"')
+	.option('--snapshot', 'include Minecraft snapshots when finding the latest version')
 	.option('--check', 'only show the current, wanted, and latest versions')
 	.option('-y, --yes', 'upgrade without asking')
 	.action(async options => {
@@ -647,6 +648,7 @@ cli.command('upgrade')
 					playit: config.playit.enabled ? playit.path() : null,
 					home: user ? (systemd.getUser(user)?.home ?? null) : homedir(),
 					minecraft: options.mc,
+					snapshot: options.snapshot,
 				}),
 			)
 			.catch(io.exit);

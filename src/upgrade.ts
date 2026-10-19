@@ -43,6 +43,8 @@ export interface CheckOptions {
 	home: string | null;
 	/** The Minecraft version to upgrade to, or `latest`. */
 	minecraft?: string;
+	/** Whether the latest Minecraft version can be a snapshot. */
+	snapshot?: boolean;
 }
 
 export interface Plan {
@@ -112,7 +114,7 @@ export async function check(options: CheckOptions): Promise<Plan> {
 	}
 
 	const index = (version: string) => versions.game.findIndex(v => v.version == version);
-	const newest = versions.game.find(v => v.stable)!.version;
+	const newest = versions.game.find(v => v.stable || options.snapshot)!.version;
 
 	const target = options.minecraft == 'latest' ? newest : options.minecraft;
 	if (target && index(target) == -1) throw new Error(`Fabric does not support Minecraft ${target}`);
