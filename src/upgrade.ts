@@ -85,8 +85,9 @@ async function checkMod(mod: ferium.Mod, profile: ferium.Profile, game: string, 
 
 /** Find what an upgrade would change, without changing anything. */
 export async function check(options: CheckOptions): Promise<Plan> {
-	const [libraries, versions, feriumRelease, profile, playitRelease] = await Promise.all([
+	const [libraries, installedMinecraft, versions, feriumRelease, profile, playitRelease] = await Promise.all([
 		fabric.libraryVersions(options.path),
+		fabric.minecraftVersion(options.path),
 		fabric.versions(),
 		ferium.latest(),
 		options.home ? ferium.activeProfile(options.home) : null,
@@ -101,10 +102,10 @@ export async function check(options: CheckOptions): Promise<Plan> {
 
 	let fabricVersions: { minecraft: string; loader: string } | null = null;
 	if (libraries) {
-		const { intermediary: minecraft, 'fabric-loader': installedLoader } = libraries;
-		if (!minecraft || !installedLoader)
-			throw new Error(`could not find the Minecraft and Fabric loader versions in ${fabric.launcherPath}`);
-		fabricVersions = { minecraft, loader: installedLoader };
+		const installedLoader = libraries['fabric-loader'];
+		if (!installedLoader) throw new Error(`could not find the Fabric loader version in ${fabric.launcherPath}`);
+		if (!installedMinecraft) throw new Error('could not find the Minecraft server jar Fabric runs');
+		fabricVersions = { minecraft: installedMinecraft, loader: installedLoader };
 	}
 
 	const index = (version: string) => versions.game.findIndex(v => v.version == version);

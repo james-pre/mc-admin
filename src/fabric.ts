@@ -1,8 +1,9 @@
 import * as fs from 'node:fs/promises';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { ZipFile } from 'node:zlib';
 import { cacheDir, exists, replaceFile, request, requestJSON } from './utils.js';
 import { config } from './config.js';
+import * as properties from './properties.js';
 
 export interface Version {
 	version: string;
@@ -53,12 +54,17 @@ export async function installer(): Promise<string> {
 
 export const launcherPath = 'fabric-server-launch.jar';
 
-/** The versions of the libraries the Fabric launcher in a server directory runs, by artifact, or null without one. */
-export async function libraryVersions(dir: string = config.path): Promise<Record<string, string> | null> {
-	await using jar = await ZipFile.open(join(dir, launcherPath)).catch((error: NodeJS.ErrnoException) => {
+/** Open a jar, or null when it doesn't exist. */
+function openJar(path: string): Promise<ZipFile | null> {
+	return ZipFile.open(path).catch((error: NodeJS.ErrnoException) => {
 		if (error.code == 'ENOENT') return null;
 		throw error;
 	});
+}
+
+/** The versions of the libraries the Fabric launcher in a server directory runs, by artifact, or null without one. */
+export async function libraryVersions(dir: string = config.path): Promise<Record<string, string> | null> {
+	await using jar = await openJar(join(dir, launcherPath));
 	if (!jar) return null;
 
 	const manifest = await jar
@@ -73,4 +79,14 @@ export async function libraryVersions(dir: string = config.path): Promise<Record
 			.map(path => path.split('/').slice(-3, -1))
 			.filter(parts => parts.length == 2),
 	);
+}
+
+/** The version of the Minecraft server jar the Fabric launcher in a server directory runs, or null without one. */
+export async function minecraftVersion(dir: string = config.path): Promise<string | null> {
+	const serverJar = properties.read(join(dir, 'fabric-server-launcher.properties')).get('serverJar') || 'server.jar';
+	await using jar = await openJar(resolve(dir, serverJar));
+	if (!jar) return null;
+
+	const version = await jar.get('version.json').then(entry => entry.content());
+	return (JSON.parse(version.toString('utf8')) as { id: string }).id;
 }
