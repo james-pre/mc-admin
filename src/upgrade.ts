@@ -68,9 +68,12 @@ async function checkMod(mod: ferium.Mod, profile: ferium.Profile, game: string, 
 	try {
 		const files = await ferium.modFiles(mod);
 		const loader = mod.check_mod_loader ? profile.mod_loader : null;
-		const current = files.find(file => installed.has(file.filename)) ?? null;
-		const wanted = ferium.compatibleFile(files, mod.check_game_version ? game : null, loader);
+		const version = mod.check_game_version ? game : null;
+		const wanted = ferium.compatibleFile(files, version, loader);
 		const latest = ferium.compatibleFile(files, null, loader);
+		const matches = files.filter(file => installed.has(file.filename));
+		const current =
+			ferium.compatibleFile(matches, version, loader) ?? ferium.compatibleFile(matches, null, loader) ?? matches[0] ?? null;
 		return {
 			name: mod.name,
 			current: current?.version ?? null,
