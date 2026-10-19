@@ -88,5 +88,5 @@ export async function minecraftVersion(dir: string = config.path): Promise<strin
 	if (!jar) return null;
 
 	const version = await jar.get('version.json').then(entry => entry.content());
-	return (JSON.parse(version.toString('utf8')) as { id: string }).id;
+	return JSON.parse(version.toString('utf8')).id;
 }

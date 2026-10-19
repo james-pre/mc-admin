@@ -419,10 +419,13 @@ cli.command('status')
 		}
 		console.log(styleText('whiteBright', 'Players:'), players);
 
-		const versions = (await fabric.libraryVersions()) ?? {};
+		const [{ 'fabric-loader': fabricVersion = unknown }, mcVersion] = await Promise.all([
+			fabric.libraryVersions().then(v => v || {}),
+			fabric.minecraftVersion(),
+		]);
 
-		console.log(styleText('whiteBright', 'Minecraft:'), versions.intermediary);
-		console.log(styleText('whiteBright', 'Fabric:'), versions['fabric-loader']);
+		console.log(styleText('whiteBright', 'Minecraft:'), mcVersion);
+		console.log(styleText('whiteBright', 'Fabric:'), fabricVersion);
 		console.log(styleText('whiteBright', 'Java:'), server.javaVersion(config.java) ?? styleText('red', `${config.java} not found`));
 
 		const startup = log.readStartupInfo(join(path, 'logs/latest.log'));
